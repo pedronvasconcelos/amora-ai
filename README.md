@@ -14,4 +14,4 @@ Nothing gets installed inside those tools. A small hook tells Amora what just ha
 
 Menu bar app. She floats above your windows, on every Space, and gets out of the way when you need the screen.
 
-Open source. Mac only. Named after a real Border Collie.
+Open source, under the MIT license. Mac only. Named after a real Border Collie.
