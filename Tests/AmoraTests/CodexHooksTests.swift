@@ -77,16 +77,25 @@ import Testing
         let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
         let command = try #require(handler["command"] as? String)
         #expect(handler["async"] as? Bool == true)
-        let output = try await runHook(command, home: home)
+        let output = try await runHook(command, home: home, payload: cwdProjectPayload)
         #expect(output == (event == "Stop" ? "{}\n" : ""))
+        #expect(!output.contains("private"))
+        #expect(!output.contains("secret"))
+        #expect(!output.contains("notes.txt"))
         #expect(received.last?.activity == expected)
         #expect(received.last?.source == .codex)
+        #expect(received.last?.project == "amora-ai")
     }
     #expect(received.count == 4)
     receiver.stop()
     let group = try #require(hooks["Stop"]?.first)
     let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
     let command = try #require(handler["command"] as? String)
-    #expect(try await runHook(command, home: home) == "{}\n")
+    let line = try await captureHookLine(home: home) {
+        let output = try await runHook(command, home: home, payload: cwdProjectPayload)
+        #expect(output == "{}\n")
+        #expect(!output.contains("private"))
+    }
+    #expect(line == "{\"v\":1,\"source\":\"codex\",\"activity\":\"finished\",\"project\":\"amora-ai\"}\n")
 }
 

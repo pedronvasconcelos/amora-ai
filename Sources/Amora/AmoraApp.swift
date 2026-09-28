@@ -15,13 +15,14 @@ struct AmoraApp {
 
 @MainActor
 final class ActivityState: ObservableObject {
-    @Published private(set) var activities: [ActivityEvent.Source: ActivityEvent.Activity] = [:]
+    @Published private(set) var activities: [ActivityEvent.Source: AgentSnapshot] = [:]
     @Published var error: String?
 
     var agents: [AgentActivity] { agentActivities(activities) }
 
     func record(_ event: ActivityEvent) {
-        activities[event.source] = event.activity
+        let project = event.project ?? activities[event.source]?.project
+        activities[event.source] = AgentSnapshot(activity: event.activity, project: project)
     }
 }
 
@@ -246,7 +247,16 @@ private struct ActivityMenu: View {
             } else if !state.agents.isEmpty {
                 ForEach(state.agents) { agent in
                     HStack {
-                        Text(agent.source.displayName)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(agent.source.displayName)
+                            if let project = agent.project {
+                                Text(project)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
                         Spacer(minLength: 8)
                         Label(agent.activity.label, systemImage: agent.activity.symbolName)
                             .foregroundStyle(.secondary)

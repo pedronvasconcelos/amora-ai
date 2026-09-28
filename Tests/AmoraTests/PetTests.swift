@@ -190,6 +190,9 @@ import Testing
     #expect(petPose(for: .finished) == .finished)
     #expect(petAccessibilityLabel(for: [AgentActivity(source: .cursor, activity: .thinking)]) == "Cursor, thinking")
     #expect(petAccessibilityLabel(for: [
+        AgentActivity(source: .cursor, activity: .thinking, project: "amora-ai")
+    ]) == "Cursor, thinking, amora-ai")
+    #expect(petAccessibilityLabel(for: [
         AgentActivity(source: .cursor, activity: .thinking),
         AgentActivity(source: .codex, activity: .waiting)
     ], isActive: true) == "Cursor, thinking; Codex, waiting, active")
