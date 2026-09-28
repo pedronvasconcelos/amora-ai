@@ -1,7 +1,8 @@
 #!/bin/sh
 
-project=$(
-    /usr/bin/awk '
+# The case statement stays outside $(...) so macOS /bin/sh (Bash 3.2) can parse it.
+read_project() {
+    project_path=$(/usr/bin/awk '
         function capture(rest,    i, c, out, esc) {
             out = ""
             esc = 0
@@ -32,28 +33,28 @@ project=$(
             }
             printf "%s", path
         }
-    ' | {
-        IFS= read -r project_path || true
-        while :; do
-            case "$project_path" in
-                */) project_path=${project_path%/} ;;
-                *) break ;;
-            esac
-        done
-        project=${project_path##*/}
-        project=$(printf '%s' "$project" | /usr/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        quote='"'
-        backslash='\'
-        case "$project" in
-            ""|"."|"..") project="" ;;
-            *"/"*|*"$backslash"*|*"$quote"*|*\'*|*[[:cntrl:]]*) project="" ;;
+    ')
+    while :; do
+        case "$project_path" in
+            */) project_path=${project_path%/} ;;
+            *) break ;;
         esac
-        if [ "${#project}" -gt 120 ]; then
-            project=""
-        fi
-        printf '%s' "$project"
-    }
-)
+    done
+    project=${project_path##*/}
+    project=$(printf '%s' "$project" | /usr/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    quote='"'
+    backslash='\'
+    case "$project" in
+        ""|"."|"..") project="" ;;
+        *"/"*|*"$backslash"*|*"$quote"*|*\'*|*[[:cntrl:]]*) project="" ;;
+    esac
+    if [ "${#project}" -gt 120 ]; then
+        project=""
+    fi
+    printf '%s' "$project"
+}
+
+project=$(read_project)
 
 case "$1" in
     beforeSubmitPrompt) activity=thinking ;;
