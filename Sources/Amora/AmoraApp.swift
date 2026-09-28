@@ -146,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPets() {
         popover.performClose(nil)
+        petModels.reload()
         let window = petsWindow ?? makeAutosizingWindow(
             title: "Pets",
             rootView: PetManagerView(

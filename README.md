@@ -20,6 +20,8 @@ Click the paw icon to see the latest activity. Choose **Pets…** to open the Pe
 
 Amora accepts pet models in the same format as Codex custom pets: a folder with a `pet.json` manifest and a transparent `spritesheet.webp` (or PNG). In the Pets window, choose **Register model…**, then drag `pet.json` and the spritesheet, or the folder that contains them, onto the drop zone. Amora validates the package, shows a preview of each animation, and copies it to `~/Library/Application Support/Amora/pets/<id>/`. Registering a model with an existing `id` replaces it.
 
+Pets already installed for Codex in `~/.codex/pets` (or `$CODEX_HOME/pets`) also appear in the Pets window automatically, labeled **From Codex**. Amora reads them in place and never changes that folder. If a registered model has the same `id`, Amora uses the registered copy.
+
 ```json
 {
   "id": "codie",

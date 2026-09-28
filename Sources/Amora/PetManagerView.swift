@@ -43,6 +43,13 @@ struct PetManagerView: View {
                     HStack {
                         Text("Models").font(.headline)
                         Spacer()
+                        Button {
+                            library.reload()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .help("Reload models")
+                        .accessibilityLabel("Reload models")
                         Button("Register model…", action: registerModel)
                     }
                     ModelRow(model: nil, subtitle: "Built in") {}
@@ -51,11 +58,10 @@ struct PetManagerView: View {
                             remove(model)
                         }
                     }
-                    if library.models.isEmpty {
-                        Text("Register a model in the Codex pet format to use it here.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(codexNote)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let message {
                         Text(message)
                             .font(.caption)
@@ -71,10 +77,17 @@ struct PetManagerView: View {
         .frame(width: 520)
     }
 
+    private var codexNote: String {
+        let folder = library.codexDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "~/.codex/pets"
+        return "Pets installed for Codex in \(folder) appear here automatically. Register a model to keep a copy in Amora."
+    }
+
     private func remove(_ model: PetModel) {
         do {
             try library.remove(id: model.id)
-            preferences.clearModel(model.id)
+            if library.model(id: model.id) == nil {
+                preferences.clearModel(model.id)
+            }
             message = nil
         } catch {
             message = "Could not remove \(model.manifest.displayName): \(error.localizedDescription)"
@@ -157,8 +170,15 @@ private struct ModelRow: View {
                 Text(model.id)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
-                Button("Remove", action: onRemove)
-                    .accessibilityLabel("Remove model \(model.manifest.displayName)")
+                switch model.source {
+                case .amora:
+                    Button("Remove", action: onRemove)
+                        .accessibilityLabel("Remove model \(model.manifest.displayName)")
+                case .codex:
+                    Text("From Codex")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

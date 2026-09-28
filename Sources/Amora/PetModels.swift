@@ -131,9 +131,15 @@ struct PetModelDraft {
 }
 
 struct PetModel: Identifiable {
+    enum Source: Equatable {
+        case amora
+        case codex
+    }
+
     let manifest: PetModelManifest
     let directory: URL
     let sprite: PetSprite
+    let source: Source
 
     var id: String { manifest.id }
 }
@@ -302,10 +308,18 @@ enum PetModelImporter {
 final class PetModelLibrary: ObservableObject {
     @Published private(set) var models: [PetModel] = []
     let directory: URL
+    let codexDirectory: URL?
     private let fileManager: FileManager
+    private var registered: [PetModel] = []
+    private var codex: [PetModel] = []
 
-    init(directory: URL = PetModelLibrary.defaultDirectory(), fileManager: FileManager = .default) {
+    init(
+        directory: URL = PetModelLibrary.defaultDirectory(),
+        codexDirectory: URL? = PetModelLibrary.defaultCodexDirectory(),
+        fileManager: FileManager = .default
+    ) {
         self.directory = directory
+        self.codexDirectory = codexDirectory
         self.fileManager = fileManager
         reload()
     }
@@ -316,26 +330,28 @@ final class PetModelLibrary: ObservableObject {
         home.appending(path: "Library/Application Support/Amora/pets", directoryHint: .isDirectory)
     }
 
+    nonisolated static func defaultCodexDirectory(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        let codexHome = environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? home.appending(path: ".codex", directoryHint: .isDirectory)
+        return codexHome.appending(path: "pets", directoryHint: .isDirectory)
+    }
+
     func model(id: String?) -> PetModel? {
         guard let id else { return nil }
         return models.first { $0.id == id }
     }
 
     func contains(id: String) -> Bool {
-        models.contains { $0.id == id }
+        registered.contains { $0.id == id }
     }
 
     func reload() {
-        let entries = (try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        models = Self.sorted(entries.compactMap { entry in
-            guard let draft = try? PetModelImporter.inspect([entry], fileManager: fileManager),
-                  draft.manifest.id == entry.lastPathComponent else { return nil }
-            return PetModel(manifest: draft.manifest, directory: entry, sprite: draft.sprite)
-        })
+        registered = loadModels(in: directory, source: .amora)
+        codex = codexDirectory.map { loadModels(in: $0, source: .codex) } ?? []
+        publish()
     }
 
     @discardableResult
@@ -361,21 +377,38 @@ final class PetModelLibrary: ObservableObject {
             try? fileManager.removeItem(at: staging)
             throw error
         }
-        let model = PetModel(manifest: manifest, directory: destination, sprite: draft.sprite)
-        models = Self.sorted(models.filter { $0.id != model.id } + [model])
+        let model = PetModel(manifest: manifest, directory: destination, sprite: draft.sprite, source: .amora)
+        registered = registered.filter { $0.id != model.id } + [model]
+        publish()
         return model
     }
 
     func remove(id: String) throws {
-        guard let model = model(id: id) else { return }
+        guard let model = registered.first(where: { $0.id == id }) else { return }
         if fileManager.fileExists(atPath: model.directory.path) {
             try fileManager.removeItem(at: model.directory)
         }
-        models.removeAll { $0.id == id }
+        registered.removeAll { $0.id == id }
+        publish()
     }
 
-    private static func sorted(_ models: [PetModel]) -> [PetModel] {
-        models.sorted {
+    private func loadModels(in folder: URL, source: PetModel.Source) -> [PetModel] {
+        let entries = (try? fileManager.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries.compactMap { entry in
+            guard let draft = try? PetModelImporter.inspect([entry], fileManager: fileManager),
+                  source == .codex || draft.manifest.id == entry.lastPathComponent else { return nil }
+            return PetModel(manifest: draft.manifest, directory: entry, sprite: draft.sprite, source: source)
+        }
+    }
+
+    private func publish() {
+        var seen = Set(registered.map(\.id))
+        let fromCodex = codex.filter { seen.insert($0.id).inserted }
+        models = (registered + fromCodex).sorted {
             $0.manifest.displayName.localizedStandardCompare($1.manifest.displayName) == .orderedAscending
         }
     }

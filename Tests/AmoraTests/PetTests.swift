@@ -213,7 +213,10 @@ import Testing
         content: PetView(
             state: ActivityState(),
             preferences: preferences,
-            library: PetModelLibrary(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)),
+            library: PetModelLibrary(
+                directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                codexDirectory: nil
+            ),
             petID: second
         )
     )
