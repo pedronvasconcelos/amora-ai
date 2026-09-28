@@ -18,12 +18,12 @@ func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
     }
 }
 
-func petAccessibilityLabel(for event: ActivityEvent?, isActive: Bool = false) -> String {
+func petAccessibilityLabel(for event: ActivityEvent?, isActive: Bool = false, name: String = "Amora") -> String {
     let base: String
     if let event {
         base = "\(event.source.displayName), \(event.activity.rawValue)"
     } else {
-        base = "Amora, resting"
+        base = "\(name), resting"
     }
     return isActive ? "\(base), active" : base
 }
@@ -31,26 +31,93 @@ func petAccessibilityLabel(for event: ActivityEvent?, isActive: Bool = false) ->
 struct PetView: View {
     @ObservedObject var state: ActivityState
     @ObservedObject var preferences: PetPreferences
+    @ObservedObject var library: PetModelLibrary
     let petID: UUID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isActive: Bool { preferences.activePetID == petID }
+    private var model: PetModel? { library.model(id: preferences.pet(petID)?.modelID) }
 
     var body: some View {
-        PetFigure(
-            pose: petPose(for: state.event?.activity),
-            reduceMotion: reduceMotion,
-            isActive: isActive
-        )
+        let pose = petPose(for: state.event?.activity)
+        Group {
+            if let model {
+                PetSpriteFigure(sprite: model.sprite, animation: petAnimation(for: pose), reduceMotion: reduceMotion)
+                    .padding(10)
+            } else {
+                PetFigure(pose: pose, reduceMotion: reduceMotion)
+            }
+        }
+        .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
+        .overlay {
+            if isActive {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(PetPalette.ink.opacity(0.35), lineWidth: 1.5)
+                    .padding(8)
+            }
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(petAccessibilityLabel(for: state.event, isActive: isActive))
+        .accessibilityLabel(petAccessibilityLabel(
+            for: state.event,
+            isActive: isActive,
+            name: model?.manifest.displayName ?? "Amora"
+        ))
+    }
+}
+
+struct PetSpriteFigure: View {
+    static let frameDuration: TimeInterval = 0.12
+
+    let sprite: PetSprite
+    let animation: PetAnimation
+    var reduceMotion: Bool
+    @State private var started = Date()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: Self.frameDuration, paused: reduceMotion)) { timeline in
+            let frames = sprite.frames(for: animation)
+            let index = reduceMotion ? 0 : spriteFrameIndex(
+                elapsed: timeline.date.timeIntervalSince(started),
+                frameDuration: Self.frameDuration,
+                frameCount: frames.count
+            )
+            if frames.indices.contains(index) {
+                Image(decorative: frames[index], scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            }
+        }
+        .onChange(of: animation) { _, _ in
+            started = Date()
+        }
+    }
+}
+
+struct PetModelThumbnail: View {
+    let model: PetModel?
+    var size: CGFloat = 36
+
+    var body: some View {
+        Group {
+            if let image = model?.sprite.thumbnail {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "pawprint.fill")
+                    .font(.system(size: size * 0.55))
+                    .foregroundStyle(PetPalette.body)
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
 private struct PetFigure: View {
     let pose: PetPose
     var reduceMotion: Bool
-    var isActive: Bool
     @State private var poseStarted = Date()
 
     var body: some View {
@@ -61,14 +128,6 @@ private struct PetFigure: View {
         }
         .onChange(of: pose) { _, _ in
             poseStarted = Date()
-        }
-        .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
-        .overlay {
-            if isActive {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(PetPalette.ink.opacity(0.35), lineWidth: 1.5)
-                    .padding(8)
-            }
         }
     }
 

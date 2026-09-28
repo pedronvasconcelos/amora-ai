@@ -14,7 +14,22 @@ Amora is unsigned. The first time you open it, Control-click Amora in Applicatio
 
 The packaged app needs macOS 14 or later on Apple Silicon. It does not need Swift or Xcode.
 
-Click the paw icon to see the latest activity. Choose **Add pet** to place another pet on the desktop, up to six, and **Choose pet** to pick the active one. **Hide pet** and **Show pet** apply only to that pet. Each pet keeps its own position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+Click the paw icon to see the latest activity. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six), pick each pet's model, show or hide it, make it active, or remove it. Each pet keeps its own model and position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+
+### Pet models
+
+Amora accepts pet models in the same format as Codex custom pets: a folder with a `pet.json` manifest and a transparent `spritesheet.webp` (or PNG). In the Pets window, choose **Register model…**, then drag `pet.json` and the spritesheet, or the folder that contains them, onto the drop zone. Amora validates the package, shows a preview of each animation, and copies it to `~/Library/Application Support/Amora/pets/<id>/`. Registering a model with an existing `id` replaces it.
+
+```json
+{
+  "id": "codie",
+  "displayName": "Codie",
+  "description": "A tiny robot companion.",
+  "spritesheetPath": "spritesheet.webp"
+}
+```
+
+The spritesheet has 8 columns of 192×208 cells: 1536×1872 with 9 rows for version 1, or 1536×2288 with 11 rows when `pet.json` declares `"spriteVersionNumber": 2`. Rows follow the Codex order: `idle`, `running-right`, `running-left`, `waving`, `jumping`, `failed`, `waiting`, `running`, `review`. Each row plays its consecutive non-empty frames from the first column. Amora shows `idle` while resting, `review` while thinking, `running` while working, `waiting` while waiting, and `jumping` when finished.
 
 Settings lists Codex, Cursor, and Claude Code. Each row shows **Installed** or **Not installed**, with **Install** or **Remove**. **Launch at login** is under General. The choice is saved on this Mac. macOS opens Amora at login when Amora is in Applications; `swift run` only stores the preference.
 

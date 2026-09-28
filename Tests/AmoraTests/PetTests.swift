@@ -106,6 +106,60 @@ import Testing
     #expect(preferences.activePetID == preferences.pets[5].id)
 }
 
+@MainActor
+@Test func petsKeepTheirModelAndCanBeRemoved() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let counter = ChangeCounter()
+    preferences.onPetsChanged = { counter.count += 1 }
+    let first = preferences.pets[0].id
+    #expect(preferences.canRemovePet == false)
+    preferences.removePet(first)
+    #expect(preferences.pets.map(\.id) == [first])
+
+    let screen = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    preferences.addPet(modelID: "codie", windowSize: PetMetrics.size, screenFrame: screen)
+    preferences.addPet(windowSize: PetMetrics.size, screenFrame: screen)
+    let second = preferences.pets[1].id
+    let third = preferences.pets[2].id
+    #expect(preferences.pets[1].modelID == "codie")
+    #expect(preferences.pets[2].modelID == nil)
+    #expect(counter.count == 2)
+
+    preferences.setModel("codie", for: first)
+    preferences.setVisible(false, for: third)
+    #expect(counter.count == 3)
+    let restored = PetPreferences(defaults: defaults)
+    #expect(restored.pets.map(\.modelID) == ["codie", "codie", nil])
+
+    preferences.clearModel("codie")
+    #expect(preferences.pets.map(\.modelID) == [nil, nil, nil])
+
+    preferences.setActive(second)
+    preferences.removePet(second)
+    #expect(preferences.pets.map(\.id) == [first, third])
+    #expect(preferences.activePetID == third)
+    #expect(counter.count == 4)
+    #expect(PetPreferences(defaults: defaults).pets.map(\.id) == [first, third])
+}
+
+@MainActor
+@Test func decodesPetsSavedBeforeModelsExisted() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let id = UUID()
+    let legacy = #"[{"id":"\#(id.uuidString)","originX":10,"originY":20,"isVisible":true}]"#
+    defaults.set(Data(legacy.utf8), forKey: PetPreferences.petsKey)
+
+    let preferences = PetPreferences(defaults: defaults)
+    #expect(preferences.pets.map(\.id) == [id])
+    #expect(preferences.pets[0].modelID == nil)
+    #expect(preferences.pets[0].origin == CGPoint(x: 10, y: 20))
+}
+
 @Test func placesTheNextPetAwayFromThePreviousOne() {
     let screen = CGRect(x: 100, y: 200, width: 800, height: 600)
     let size = CGSize(width: 100, height: 120)
@@ -156,7 +210,12 @@ import Testing
     let panel = PetPanelController(
         petID: second,
         preferences: preferences,
-        content: PetView(state: ActivityState(), preferences: preferences, petID: second)
+        content: PetView(
+            state: ActivityState(),
+            preferences: preferences,
+            library: PetModelLibrary(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)),
+            petID: second
+        )
     )
     let window = panel.window
 
@@ -186,6 +245,11 @@ import Testing
     #expect(window.frame.origin.y == placed.y)
     #expect(preferences.origin(for: second) == CGPoint(x: -500, y: -500))
     #expect(preferences.origin(for: first) == CGPoint(x: 40, y: 50))
+}
+
+@MainActor
+private final class ChangeCounter {
+    var count = 0
 }
 
 private struct TemporaryDefaults {
