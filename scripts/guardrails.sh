@@ -19,10 +19,14 @@ ok() {
 ok "license present"
 
 grep -qx '.build/' .gitignore || fail ".build/ must stay gitignored"
+grep -qx 'dist/' .gitignore || fail "dist/ must stay gitignored"
 ok "build output is gitignored"
 
 if git ls-files | grep -q '^\.build/'; then
     fail ".build is tracked"
+fi
+if git ls-files | grep -q '^dist/'; then
+    fail "dist is tracked"
 fi
 ok "build output is not tracked"
 
@@ -59,9 +63,23 @@ while IFS= read -r workflow; do
     if grep -n 'pull_request_target' "$workflow"; then
         fail "pull_request_target is not allowed"
     fi
-    if grep -E 'write-all|contents: write' "$workflow" >/dev/null; then
-        fail "workflow token must stay read-only"
+    if grep -E 'write-all' "$workflow" >/dev/null; then
+        fail "workflow token must not use write-all"
     fi
+    case "$workflow" in
+        .github/workflows/release.yml)
+            grep -q 'contents: write' "$workflow" || fail "release workflow must request contents: write"
+            grep -q 'tags:' "$workflow" || fail "release workflow must be tag-triggered"
+            if grep -E 'pull_request:' "$workflow" >/dev/null; then
+                fail "release workflow must not run on pull requests"
+            fi
+            ;;
+        *)
+            if grep -E 'contents: write' "$workflow" >/dev/null; then
+                fail "workflow token must stay read-only"
+            fi
+            ;;
+    esac
 done < "$tmp"
 grep -q 'contents: read' .github/workflows/ci.yml || fail "CI token must be read-only"
-ok "workflow token is read-only"
+ok "workflow tokens are constrained"

@@ -36,7 +36,7 @@ struct ClaudeHooks {
     func install() throws {
         var document = try readConfiguration()
         var hooks = try removingOwnedHooks(from: document)
-        guard let bundledScript = Bundle.module.url(forResource: "claude-hook", withExtension: "sh") else {
+        guard let bundledScript = BundledHook.url(named: "claude-hook") else {
             throw ConfigurationError.missingScript
         }
         let script = try Data(contentsOf: bundledScript)

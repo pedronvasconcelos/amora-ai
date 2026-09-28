@@ -32,7 +32,7 @@ struct CursorHooks {
         var document = try readConfiguration()
         try requireSupportedVersion(document)
         var hooks = try removingOwnedHooks(from: document)
-        guard let bundledScript = Bundle.module.url(forResource: "cursor-hook", withExtension: "sh") else {
+        guard let bundledScript = BundledHook.url(named: "cursor-hook") else {
             throw ConfigurationError.missingScript
         }
         let script = try Data(contentsOf: bundledScript)

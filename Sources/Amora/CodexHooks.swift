@@ -36,7 +36,7 @@ struct CodexHooks {
     func install() throws {
         var document = try readConfiguration()
         var hooks = try removingOwnedHooks(from: document)
-        guard let bundledScript = Bundle.module.url(forResource: "codex-hook", withExtension: "sh") else {
+        guard let bundledScript = BundledHook.url(named: "codex-hook") else {
             throw ConfigurationError.missingScript
         }
         let script = try Data(contentsOf: bundledScript)
