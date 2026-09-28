@@ -44,6 +44,43 @@ import Testing
     #expect(leadingActivity(state.agents)?.source == .cursor)
 }
 
+@Test func keepsOnlyTheProjectFolderName() throws {
+    let named = Data(#"{"v":1,"source":"cursor","activity":"working","project":"amora-ai"}"#.utf8)
+    #expect(ActivityEvent.decode(named)?.project == "amora-ai")
+    let spaced = Data(#"{"v":1,"source":"claude","activity":"thinking","project":"My Project"}"#.utf8)
+    #expect(ActivityEvent.decode(spaced)?.project == "My Project")
+
+    for project in ["/Users/me/secret", "Users\\me\\secret", "..", ".", "\"quoted\"", String(repeating: "a", count: 121)] {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "v": 1, "source": "cursor", "activity": "working", "project": project
+        ])
+        let event = ActivityEvent.decode(payload)
+        #expect(event?.activity == .working)
+        #expect(event?.project == nil)
+    }
+    let omitted = Data(#"{"v":1,"source":"codex","activity":"finished"}"#.utf8)
+    #expect(ActivityEvent.decode(omitted)?.project == nil)
+}
+
+@MainActor
+@Test func keepsEachAgentsProjectWhenALaterEventOmitsIt() throws {
+    let state = ActivityState()
+    state.record(try #require(ActivityEvent.decode(Data(
+        #"{"v":1,"source":"cursor","activity":"thinking","project":"amora-ai"}"#.utf8
+    ))))
+    state.record(try #require(ActivityEvent.decode(Data(
+        #"{"v":1,"source":"codex","activity":"working","project":"other-app"}"#.utf8
+    ))))
+    state.record(try #require(ActivityEvent.decode(Data(
+        #"{"v":1,"source":"cursor","activity":"finished"}"#.utf8
+    ))))
+    #expect(state.agents == [
+        AgentActivity(source: .cursor, activity: .finished, project: "amora-ai"),
+        AgentActivity(source: .codex, activity: .working, project: "other-app")
+    ])
+    #expect(activitySummary(state.agents) == "Cursor: Finished · amora-ai\nCodex: Working · other-app")
+}
+
 @Test func leadingActivityBreaksTiesByAgentOrder() {
     #expect(leadingActivity([
         AgentActivity(source: .cursor, activity: .working),

@@ -14,7 +14,7 @@ Amora is unsigned. The first time you open it, Control-click Amora in Applicatio
 
 The packaged app needs macOS 14 or later on Apple Silicon. It does not need Swift or Xcode.
 
-Click the paw icon to see the latest activity. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six), pick each pet's model, show or hide it, make it active, or remove it. Each pet keeps its own model and position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+Click the paw icon to see the latest activity. Each agent that has reported shows what it is doing and the folder name of the project it is working in. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six), pick each pet's model, show or hide it, make it active, or remove it. Each pet keeps its own model and position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
 
 ### Pet models
 
@@ -35,7 +35,7 @@ The spritesheet has 8 columns of 192×208 cells: 1536×1872 with 9 rows for vers
 
 Settings lists Codex, Cursor, and Claude Code. Each row shows **Installed** or **Not installed**, with **Install** or **Remove**. **Launch at login** is under General. The choice is saved on this Mac. macOS opens Amora at login when Amora is in Applications; `swift run` only stores the preference.
 
-Installing hooks keeps your existing settings and any hooks you or another tool already configured. Each hook sends only a fixed activity value to Amora; it does not forward prompts, files, or tool input and output. If Amora is not running, the hook exits without interrupting the agent.
+Installing hooks keeps your existing settings and any hooks you or another tool already configured. Each hook sends the activity and the project folder name. It does not send the prompt, files, or tool results. If Amora is not running, the hook exits without interrupting the agent. Choose **Install** again to update hook scripts from an earlier version; other hooks stay in place.
 
 To enable Codex activity, choose **Install** next to Codex, then review and trust Amora's hooks in Codex settings or with `/hooks` in the Codex CLI.
 

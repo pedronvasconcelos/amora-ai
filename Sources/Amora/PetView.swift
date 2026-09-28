@@ -23,7 +23,12 @@ func petAccessibilityLabel(for agents: [AgentActivity], isActive: Bool = false, 
     if agents.isEmpty {
         base = "\(name), resting"
     } else {
-        base = agents.map { "\($0.source.displayName), \($0.activity.rawValue)" }.joined(separator: "; ")
+        base = agents.map { agent in
+            if let project = agent.project {
+                return "\(agent.source.displayName), \(agent.activity.rawValue), \(project)"
+            }
+            return "\(agent.source.displayName), \(agent.activity.rawValue)"
+        }.joined(separator: "; ")
     }
     return isActive ? "\(base), active" : base
 }
