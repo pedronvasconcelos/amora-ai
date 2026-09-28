@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+      - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to package, e.g. 0.1.1
+        required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -19,25 +25,31 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - name: Package
         run: sh scripts/package.sh
         env:
-          AMORA_VERSION: ${{ github.ref_name }}
+          AMORA_VERSION: ${{ env.TAG }}
 
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=${GITHUB_REF_NAME#v}
+          version=${TAG#v}
+          dmg="dist/Amora-${version}-arm64.dmg"
           notes="Download Amora-${version}-arm64.dmg for Apple Silicon.
 
           Open the disk image and drag Amora into Applications. Amora is unsigned, so the first time you open it, Control-click Amora, choose Open, then choose Open again. After that, the paw icon appears in the menu bar.
 
           Requires macOS 14 or later. Swift and Xcode are not required."
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/Amora-${version}-arm64.dmg" \
-            --title "Amora $version" \
-            --notes "$notes"
+          # Releases created in the GitHub UI already exist when the tag push arrives.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$dmg" --clobber
+          else
+            gh release create "$TAG" "$dmg" --title "Amora $version" --notes "$notes"
+          fi
