@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = SettingsModel()
     private let petPreferences = PetPreferences()
     private var receiver: ActivityReceiver?
-    private var petPanel: PetPanelController?
+    private var petPanels: [UUID: PetPanelController] = [:]
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private let popover = NSPopover()
@@ -42,14 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 state: state,
                 preferences: petPreferences,
                 openSettings: { [weak self] in self?.showSettings() },
-                setPetVisible: { [weak self] visible in self?.setPetVisible(visible) }
+                setPetVisible: { [weak self] visible in self?.setPetVisible(visible) },
+                addPet: { [weak self] in self?.addPet() },
+                choosePet: { [weak self] id in self?.petPreferences.setActive(id) }
             )
         )
-        let panel = PetPanelController(preferences: petPreferences, content: PetView(state: state))
-        petPanel = panel
-        if petPreferences.isVisible {
-            panel.show()
-        }
+        installPetPanels()
         settings.applyStoredLaunchAtLogin()
         let receiver = ActivityReceiver { [weak self] event in
             self?.state.event = event
@@ -76,13 +74,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func setPetVisible(_ visible: Bool) {
-        petPreferences.setVisible(visible)
-        if visible {
-            petPanel?.show()
-        } else {
-            petPanel?.hide()
+    private func installPetPanels() {
+        for pet in petPreferences.pets where petPanels[pet.id] == nil {
+            let panel = makePanel(id: pet.id)
+            petPanels[pet.id] = panel
+            if pet.isVisible {
+                panel.show()
+            }
         }
+    }
+
+    private func makePanel(id: UUID) -> PetPanelController {
+        PetPanelController(
+            petID: id,
+            preferences: petPreferences,
+            content: PetView(state: state, preferences: petPreferences, petID: id),
+            onSelect: { [weak self] in
+                self?.petPreferences.setActive(id)
+            }
+        )
+    }
+
+    private func setPetVisible(_ visible: Bool) {
+        let id = petPreferences.activePetID
+        petPreferences.setVisible(visible, for: id)
+        guard let panel = petPanels[id] else { return }
+        if visible {
+            panel.show()
+        } else {
+            panel.hide()
+        }
+    }
+
+    private func addPet() {
+        let screen = NSScreen.main?.visibleFrame
+            ?? NSScreen.screens.first?.visibleFrame
+            ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let existing = Set(petPreferences.pets.map(\.id))
+        petPreferences.addPet(windowSize: PetMetrics.size, screenFrame: screen)
+        guard let pet = petPreferences.pets.last, !existing.contains(pet.id) else { return }
+        let panel = makePanel(id: pet.id)
+        petPanels[pet.id] = panel
+        panel.show()
     }
 
     private func showSettings() {
@@ -116,6 +149,12 @@ private struct ActivityMenu: View {
     @ObservedObject var preferences: PetPreferences
     let openSettings: () -> Void
     let setPetVisible: (Bool) -> Void
+    let addPet: () -> Void
+    let choosePet: (UUID) -> Void
+
+    private var activePetIsVisible: Bool {
+        preferences.activePet?.isVisible ?? false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -130,8 +169,23 @@ private struct ActivityMenu: View {
                 Text("Waiting for activity").foregroundStyle(.secondary)
             }
             Divider()
-            Button(preferences.isVisible ? "Hide pet" : "Show pet") {
-                setPetVisible(!preferences.isVisible)
+            Button(activePetIsVisible ? "Hide pet" : "Show pet") {
+                setPetVisible(!activePetIsVisible)
+            }
+            Button("Add pet", action: addPet)
+                .disabled(!preferences.canAddPet)
+            Menu("Choose pet") {
+                ForEach(Array(preferences.pets.enumerated()), id: \.element.id) { index, pet in
+                    Button {
+                        choosePet(pet.id)
+                    } label: {
+                        if pet.id == preferences.activePetID {
+                            Label("Pet \(index + 1)", systemImage: "checkmark")
+                        } else {
+                            Text("Pet \(index + 1)")
+                        }
+                    }
+                }
             }
             Button("Settings…", action: openSettings)
             Divider()

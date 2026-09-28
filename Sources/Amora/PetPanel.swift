@@ -37,11 +37,15 @@ final class PetPanelWindow: NSPanel {
 @MainActor
 final class PetPanelController: NSObject, NSWindowDelegate {
     let window: PetPanelWindow
+    private let petID: UUID
     private let preferences: PetPreferences
+    private let onSelect: () -> Void
     private var acceptsOriginUpdates = false
 
-    init(preferences: PetPreferences, content: some View) {
+    init(petID: UUID, preferences: PetPreferences, content: some View, onSelect: @escaping () -> Void = {}) {
+        self.petID = petID
         self.preferences = preferences
+        self.onSelect = onSelect
         let window = PetPanelWindow(
             contentRect: NSRect(origin: .zero, size: PetMetrics.size),
             styleMask: PetPanelPolicy.styleMask,
@@ -77,13 +81,17 @@ final class PetPanelController: NSObject, NSWindowDelegate {
         super.init()
         window.delegate = self
         drag.onMove = { [weak self] origin in
-            self?.preferences.setOrigin(origin)
+            guard let self else { return }
+            self.preferences.setOrigin(origin, for: self.petID)
+        }
+        drag.onSelect = { [weak self] in
+            self?.onSelect()
         }
     }
 
     func place(on screenFrame: CGRect) {
         let size = window.frame.size
-        let saved = preferences.origin ?? defaultPetOrigin(windowSize: size, screenFrame: screenFrame)
+        let saved = preferences.origin(for: petID) ?? defaultPetOrigin(windowSize: size, screenFrame: screenFrame)
         window.setFrameOrigin(clampedPetOrigin(saved, windowSize: size, screenFrame: screenFrame))
         acceptsOriginUpdates = true
     }
@@ -100,19 +108,22 @@ final class PetPanelController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard acceptsOriginUpdates else { return }
-        preferences.setOrigin(window.frame.origin)
+        preferences.setOrigin(window.frame.origin, for: petID)
     }
 }
 
 private final class PetDragView: NSView {
     var onMove: ((CGPoint) -> Void)?
+    var onSelect: (() -> Void)?
     private var anchor: (origin: NSPoint, mouse: NSPoint)?
+    private var moved = false
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
         anchor = (window.frame.origin, NSEvent.mouseLocation)
+        moved = false
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -122,11 +133,19 @@ private final class PetDragView: NSView {
             x: anchor.origin.x + (mouse.x - anchor.mouse.x),
             y: anchor.origin.y + (mouse.y - anchor.mouse.y)
         )
+        if hypot(mouse.x - anchor.mouse.x, mouse.y - anchor.mouse.y) > 2 {
+            moved = true
+        }
         window.setFrameOrigin(origin)
         onMove?(origin)
     }
 
     override func mouseUp(with event: NSEvent) {
+        let shouldSelect = anchor != nil && !moved
         anchor = nil
+        moved = false
+        if shouldSelect {
+            onSelect?()
+        }
     }
 }

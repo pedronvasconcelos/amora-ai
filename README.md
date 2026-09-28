@@ -14,7 +14,7 @@ Amora is unsigned. The first time you open it, Control-click Amora in Applicatio
 
 The packaged app needs macOS 14 or later on Apple Silicon. It does not need Swift or Xcode.
 
-Click the paw icon to see the latest activity. Choose **Hide pet** or **Show pet** to change the pet. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+Click the paw icon to see the latest activity. Choose **Add pet** to place another pet on the desktop, up to six, and **Choose pet** to pick the active one. **Hide pet** and **Show pet** apply only to that pet. Each pet keeps its own position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
 
 Settings lists Codex, Cursor, and Claude Code. Each row shows **Installed** or **Not installed**, with **Install** or **Remove**. **Launch at login** is under General. The choice is saved on this Mac. macOS opens Amora at login when Amora is in Applications; `swift run` only stores the preference.
 
@@ -54,7 +54,7 @@ Writes `dist/Amora.app` and `dist/Amora-<version>-arm64.dmg`. Push a `v*` tag to
 
 ## Project status
 
-This is an early, work-in-progress prototype. You can install the macOS app, open Settings, connect Codex, Cursor, and Claude Code activity, and watch that activity on the desktop pet. Contributions and focused bug reports are welcome.
+This is an early, work-in-progress prototype. You can install the macOS app, open Settings, connect Codex, Cursor, and Claude Code activity, and watch that activity on desktop pets. Contributions and focused bug reports are welcome.
 
 ## License
 

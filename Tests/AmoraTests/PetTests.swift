@@ -4,24 +4,115 @@ import Testing
 @testable import Amora
 
 @MainActor
-@Test func petPreferencePersistsVisibilityAndOrigin() throws {
-    let suite = "amora.tests.\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+@Test func freshPetStoreStartsWithOneVisiblePet() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
 
     let preferences = PetPreferences(defaults: defaults)
-    #expect(preferences.isVisible == true)
-    #expect(preferences.origin == nil)
+    #expect(preferences.pets.count == 1)
+    #expect(preferences.pets[0].isVisible == true)
+    #expect(preferences.pets[0].origin == nil)
+    #expect(preferences.activePetID == preferences.pets[0].id)
+    #expect(preferences.canAddPet == true)
 
-    preferences.setVisible(false)
-    preferences.setOrigin(CGPoint(x: 12, y: 34))
+    let id = preferences.pets[0].id
+    preferences.setVisible(false, for: id)
+    preferences.setOrigin(CGPoint(x: 12, y: 34), for: id)
     let restored = PetPreferences(defaults: defaults)
-    #expect(restored.isVisible == false)
-    #expect(restored.origin == CGPoint(x: 12, y: 34))
+    #expect(restored.pets.count == 1)
+    #expect(restored.pets[0].id == id)
+    #expect(restored.pets[0].isVisible == false)
+    #expect(restored.pets[0].origin == CGPoint(x: 12, y: 34))
+    #expect(restored.activePetID == id)
 
-    restored.setVisible(true)
-    #expect(restored.origin == CGPoint(x: 12, y: 34))
-    #expect(PetPreferences(defaults: defaults).isVisible == true)
+    restored.setVisible(true, for: id)
+    #expect(restored.pets[0].origin == CGPoint(x: 12, y: 34))
+    #expect(PetPreferences(defaults: defaults).pets[0].isVisible == true)
+}
+
+@MainActor
+@Test func migratesLegacyPetVisibilityAndOrigin() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    defaults.set(false, forKey: PetPreferences.visibleKey)
+    defaults.set(12.0, forKey: PetPreferences.originXKey)
+    defaults.set(34.0, forKey: PetPreferences.originYKey)
+
+    let preferences = PetPreferences(defaults: defaults)
+    #expect(preferences.pets.count == 1)
+    #expect(preferences.pets[0].isVisible == false)
+    #expect(preferences.pets[0].origin == CGPoint(x: 12, y: 34))
+    let id = preferences.pets[0].id
+
+    defaults.set(true, forKey: PetPreferences.visibleKey)
+    defaults.set(99.0, forKey: PetPreferences.originXKey)
+    let restored = PetPreferences(defaults: defaults)
+    #expect(restored.pets[0].id == id)
+    #expect(restored.pets[0].isVisible == false)
+    #expect(restored.pets[0].origin == CGPoint(x: 12, y: 34))
+    #expect(restored.activePetID == id)
+}
+
+@MainActor
+@Test func addPetOffsetsTheNewPetAndLeavesTheOthersAlone() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let first = preferences.pets[0].id
+    let screen = CGRect(x: 100, y: 200, width: 800, height: 600)
+    let size = CGSize(width: 100, height: 120)
+    preferences.setOrigin(CGPoint(x: 150, y: 250), for: first)
+
+    preferences.addPet(windowSize: size, screenFrame: screen)
+    #expect(preferences.pets.count == 2)
+    #expect(preferences.activePetID == preferences.pets[1].id)
+    #expect(preferences.pets[1].isVisible == true)
+    #expect(preferences.pets[1].origin == CGPoint(x: 114, y: 286))
+    #expect(preferences.pets[0].isVisible == true)
+    #expect(preferences.pets[0].origin == CGPoint(x: 150, y: 250))
+
+    preferences.setVisible(false, for: preferences.pets[1].id)
+    #expect(preferences.pets[0].isVisible == true)
+    #expect(preferences.pets[1].isVisible == false)
+
+    preferences.setActive(first)
+    #expect(preferences.activePetID == first)
+    preferences.setActive(UUID())
+    #expect(preferences.activePetID == first)
+
+    let restored = PetPreferences(defaults: defaults)
+    #expect(restored.pets.map(\.id) == preferences.pets.map(\.id))
+    #expect(restored.activePetID == first)
+    #expect(restored.pets[1].isVisible == false)
+    #expect(restored.pets[1].origin == CGPoint(x: 114, y: 286))
+}
+
+@MainActor
+@Test func addPetStopsAtSix() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let screen = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let size = PetMetrics.size
+    for _ in 0..<8 {
+        preferences.addPet(windowSize: size, screenFrame: screen)
+    }
+    #expect(preferences.pets.count == PetPreferences.maximumPets)
+    #expect(preferences.canAddPet == false)
+    #expect(preferences.activePetID == preferences.pets[5].id)
+}
+
+@Test func placesTheNextPetAwayFromThePreviousOne() {
+    let screen = CGRect(x: 100, y: 200, width: 800, height: 600)
+    let size = CGSize(width: 100, height: 120)
+
+    #expect(nextPetOrigin(after: nil, windowSize: size, screenFrame: screen) == CGPoint(x: 736, y: 264))
+    #expect(nextPetOrigin(after: CGPoint(x: 150, y: 250), windowSize: size, screenFrame: screen) == CGPoint(x: 114, y: 286))
+    #expect(nextPetOrigin(after: CGPoint(x: 100, y: 200), windowSize: size, screenFrame: screen) == CGPoint(x: 100, y: 236))
 }
 
 @Test func clampsPetOriginToTheVisibleScreen() {
@@ -46,16 +137,27 @@ import Testing
     let event = ActivityEvent.decode(Data(#"{"v":1,"source":"cursor","activity":"thinking"}"#.utf8))
     #expect(petAccessibilityLabel(for: event) == "Cursor, thinking")
     #expect(petAccessibilityLabel(for: nil) == "Amora, resting")
+    #expect(petAccessibilityLabel(for: nil, isActive: true) == "Amora, resting, active")
 }
 
 @MainActor
 @Test func petPanelStaysFloatingWithoutTakingFocus() throws {
-    let suite = "amora.tests.\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
     let preferences = PetPreferences(defaults: defaults)
-    preferences.setOrigin(CGPoint(x: -500, y: -500))
-    let panel = PetPanelController(preferences: preferences, content: PetView(state: ActivityState()))
+    let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let size = CGSize(width: 100, height: 120)
+    preferences.addPet(windowSize: size, screenFrame: screen)
+    let first = preferences.pets[0].id
+    let second = preferences.pets[1].id
+    preferences.setOrigin(CGPoint(x: 40, y: 50), for: first)
+    preferences.setOrigin(CGPoint(x: -500, y: -500), for: second)
+    let panel = PetPanelController(
+        petID: second,
+        preferences: preferences,
+        content: PetView(state: ActivityState(), preferences: preferences, petID: second)
+    )
     let window = panel.window
 
     #expect(window.styleMask.contains(.borderless))
@@ -70,7 +172,6 @@ import Testing
     #expect(window.canBecomeKey == false)
     #expect(window.canBecomeMain == false)
 
-    let screen = CGRect(x: 0, y: 0, width: 800, height: 600)
     panel.place(on: screen)
     let placed = clampedPetOrigin(
         CGPoint(x: -500, y: -500),
@@ -79,5 +180,21 @@ import Testing
     )
     #expect(window.frame.origin.x == placed.x)
     #expect(window.frame.origin.y == placed.y)
-    #expect(preferences.origin == CGPoint(x: -500, y: -500))
+    #expect(preferences.origin(for: second) == CGPoint(x: -500, y: -500))
+    #expect(preferences.origin(for: first) == CGPoint(x: 40, y: 50))
+}
+
+private struct TemporaryDefaults {
+    let name: String
+    let defaults: UserDefaults
+
+    func close() {
+        defaults.removePersistentDomain(forName: name)
+    }
+}
+
+private func temporaryDefaults() throws -> TemporaryDefaults {
+    let name = "amora.tests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: name))
+    return TemporaryDefaults(name: name, defaults: defaults)
 }
