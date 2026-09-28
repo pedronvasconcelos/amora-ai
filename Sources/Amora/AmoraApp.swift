@@ -15,8 +15,14 @@ struct AmoraApp {
 
 @MainActor
 final class ActivityState: ObservableObject {
-    @Published var event: ActivityEvent?
+    @Published private(set) var activities: [ActivityEvent.Source: ActivityEvent.Activity] = [:]
     @Published var error: String?
+
+    var agents: [AgentActivity] { agentActivities(activities) }
+
+    func record(_ event: ActivityEvent) {
+        activities[event.source] = event.activity
+    }
 }
 
 @MainActor
@@ -57,8 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncPetPanels()
         settings.applyStoredLaunchAtLogin()
         let receiver = ActivityReceiver { [weak self] event in
-            self?.state.event = event
-            self?.statusItem?.button?.toolTip = event.activity.rawValue.capitalized
+            guard let self else { return }
+            self.state.record(event)
+            self.statusItem?.button?.toolTip = activitySummary(self.state.agents)
         }
         self.receiver = receiver
         do {
@@ -236,10 +243,16 @@ private struct ActivityMenu: View {
             Text("Amora").font(.headline)
             if let error = state.error {
                 Text(error).foregroundStyle(.red)
-            } else if let event = state.event {
-                Text(event.activity.rawValue.capitalized)
-                Text(event.source.displayName)
-                    .font(.caption).foregroundStyle(.secondary)
+            } else if !state.agents.isEmpty {
+                ForEach(state.agents) { agent in
+                    HStack {
+                        Text(agent.source.displayName)
+                        Spacer(minLength: 8)
+                        Label(agent.activity.label, systemImage: agent.activity.symbolName)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             } else {
                 Text("Waiting for activity").foregroundStyle(.secondary)
             }

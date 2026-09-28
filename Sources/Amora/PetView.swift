@@ -18,12 +18,12 @@ func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
     }
 }
 
-func petAccessibilityLabel(for event: ActivityEvent?, isActive: Bool = false, name: String = "Amora") -> String {
+func petAccessibilityLabel(for agents: [AgentActivity], isActive: Bool = false, name: String = "Amora") -> String {
     let base: String
-    if let event {
-        base = "\(event.source.displayName), \(event.activity.rawValue)"
-    } else {
+    if agents.isEmpty {
         base = "\(name), resting"
+    } else {
+        base = agents.map { "\($0.source.displayName), \($0.activity.rawValue)" }.joined(separator: "; ")
     }
     return isActive ? "\(base), active" : base
 }
@@ -39,7 +39,8 @@ struct PetView: View {
     private var model: PetModel? { library.model(id: preferences.pet(petID)?.modelID) }
 
     var body: some View {
-        let pose = petPose(for: state.event?.activity)
+        let agents = state.agents
+        let pose = petPose(for: leadingActivity(agents)?.activity)
         Group {
             if let model {
                 PetSpriteFigure(sprite: model.sprite, animation: petAnimation(for: pose), reduceMotion: reduceMotion)
@@ -56,12 +57,38 @@ struct PetView: View {
                     .padding(8)
             }
         }
+        .overlay(alignment: .bottom) {
+            if !agents.isEmpty {
+                HStack(spacing: 3) {
+                    ForEach(agents) { AgentActivityBadge(agent: $0) }
+                }
+                .padding(.bottom, 4)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(petAccessibilityLabel(
-            for: state.event,
+            for: agents,
             isActive: isActive,
             name: model?.manifest.displayName ?? "Amora"
         ))
+    }
+}
+
+private struct AgentActivityBadge: View {
+    let agent: AgentActivity
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(agent.source.monogram)
+            Image(systemName: agent.activity.symbolName)
+        }
+        .font(.system(size: 8, weight: .bold, design: .rounded))
+        .foregroundStyle(agent.activity == .waiting ? Color.white : PetPalette.ink)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(
+            Capsule().fill(agent.activity == .waiting ? PetPalette.innerEar : PetPalette.belly)
+        )
     }
 }
 

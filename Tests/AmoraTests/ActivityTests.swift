@@ -18,6 +18,40 @@ import Testing
 }
 
 @MainActor
+@Test func keepsEachAgentsActivitySeparately() throws {
+    let state = ActivityState()
+    #expect(state.agents.isEmpty)
+    #expect(activitySummary(state.agents) == nil)
+    #expect(leadingActivity(state.agents) == nil)
+
+    for payload in [
+        #"{"v":1,"source":"codex","activity":"working"}"#,
+        #"{"v":1,"source":"cursor","activity":"thinking"}"#,
+        #"{"v":1,"source":"claude","activity":"finished"}"#
+    ] {
+        state.record(try #require(ActivityEvent.decode(Data(payload.utf8))))
+    }
+    #expect(state.agents == [
+        AgentActivity(source: .cursor, activity: .thinking),
+        AgentActivity(source: .claude, activity: .finished),
+        AgentActivity(source: .codex, activity: .working)
+    ])
+    #expect(leadingActivity(state.agents) == AgentActivity(source: .codex, activity: .working))
+    #expect(activitySummary(state.agents) == "Cursor: Thinking\nClaude Code: Finished\nCodex: Working")
+
+    state.record(try #require(ActivityEvent.decode(Data(#"{"v":1,"source":"cursor","activity":"waiting"}"#.utf8))))
+    #expect(state.agents.map(\.activity) == [.waiting, .finished, .working])
+    #expect(leadingActivity(state.agents)?.source == .cursor)
+}
+
+@Test func leadingActivityBreaksTiesByAgentOrder() {
+    #expect(leadingActivity([
+        AgentActivity(source: .cursor, activity: .working),
+        AgentActivity(source: .codex, activity: .working)
+    ])?.source == .cursor)
+}
+
+@MainActor
 @Test func receivesFramedEventsAndPreservesActiveSocket() async throws {
     let directory = URL(fileURLWithPath: "/tmp/amora-\(UUID().uuidString)")
     var events: [ActivityEvent] = []
