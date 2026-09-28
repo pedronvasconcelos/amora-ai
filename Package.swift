@@ -6,7 +6,11 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.executable(name: "Amora", targets: ["Amora"])],
     targets: [
-        .executableTarget(name: "Amora", resources: [.copy("Resources/codex-hook.sh")]),
+        .executableTarget(name: "Amora", resources: [
+            .copy("Resources/claude-hook.sh"),
+            .copy("Resources/codex-hook.sh"),
+            .copy("Resources/cursor-hook.sh")
+        ]),
         .testTarget(name: "AmoraTests", dependencies: ["Amora"])
     ]
 )
