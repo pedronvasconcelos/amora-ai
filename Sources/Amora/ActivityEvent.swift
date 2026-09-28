@@ -4,6 +4,15 @@ struct ActivityEvent: Decodable {
     enum Source: String, Decodable {
         case cursor
         case claude
+        case codex
+
+        var displayName: String {
+            switch self {
+            case .cursor: "Cursor"
+            case .claude: "Claude Code"
+            case .codex: "Codex"
+            }
+        }
     }
 
     enum Activity: String, Decodable {
