@@ -46,11 +46,13 @@ struct PetView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isActive: Bool { preferences.activePetID == petID }
+    private var scope: PetScope { preferences.pet(petID)?.scope ?? .everyone }
     private var model: PetModel? { library.model(id: preferences.pet(petID)?.modelID) }
 
     var body: some View {
-        let agents = state.agents
+        let agents = agentsForPet(scope: scope, agents: state.agents)
         let pose = petPose(for: leadingActivity(agents)?.activity)
+        let coat = coatDefinition(builtinPet(for: scope).coat)
         GeometryReader { proxy in
             let scale = petContentScale(in: proxy.size, fallback: preferences.scale(for: petID))
             Group {
@@ -58,7 +60,7 @@ struct PetView: View {
                     PetSpriteFigure(sprite: model.sprite, animation: petAnimation(for: pose), reduceMotion: reduceMotion)
                         .padding(10)
                 } else {
-                    PetFigure(pose: pose, reduceMotion: reduceMotion)
+                    PetFigure(pose: pose, coat: coat, reduceMotion: reduceMotion)
                 }
             }
             .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
@@ -84,7 +86,7 @@ struct PetView: View {
         .accessibilityLabel(petAccessibilityLabel(
             for: agents,
             isActive: isActive,
-            name: model?.manifest.displayName ?? "Amora"
+            name: petDisplayName(scope: scope, modelName: model?.manifest.displayName)
         ))
     }
 }
@@ -138,6 +140,7 @@ struct PetSpriteFigure: View {
 
 struct PetModelThumbnail: View {
     let model: PetModel?
+    var coat: PetCoatDefinition = coatDefinition(.blueMerle)
     var size: CGFloat = 36
 
     var body: some View {
@@ -148,7 +151,7 @@ struct PetModelThumbnail: View {
                     .interpolation(.high)
                     .scaledToFit()
             } else {
-                AmoraDrawing(pose: nil, clock: 0, reduceMotion: true)
+                AmoraDrawing(coat: coat, pose: nil, clock: 0, reduceMotion: true)
                     .frame(width: AmoraDrawing.size.width, height: AmoraDrawing.size.height)
                     .scaleEffect(size / AmoraDrawing.size.height)
             }
@@ -159,6 +162,7 @@ struct PetModelThumbnail: View {
 
 private struct PetFigure: View {
     let pose: PetPose
+    let coat: PetCoatDefinition
     var reduceMotion: Bool
     @State private var poseStarted = Date()
 
@@ -181,7 +185,7 @@ private struct PetFigure: View {
                 .fill(Color.black.opacity(0.16))
                 .frame(width: hop < -2 ? 26 : 36, height: 10)
                 .offset(y: 46)
-            AmoraDrawing(pose: pose, clock: clock, reduceMotion: reduceMotion)
+            AmoraDrawing(coat: coat, pose: pose, clock: clock, reduceMotion: reduceMotion)
                 .offset(y: bob + hop)
                 .scaleEffect(pose == .resting && !reduceMotion ? 1 + sin(clock * 1.2) * 0.018 : 1, anchor: .bottom)
         }
@@ -211,12 +215,12 @@ private struct PetFigure: View {
     }
 }
 
-/// Amora is a working-line blue merle border collie: lean head, sparse and
-/// asymmetric white, one pricked ear and one semi-erect ear.
+/// A working-line border collie. The coat supplies color, markings, eyes, and ears.
 /// A nil pose draws the neutral portrait used for thumbnails.
 private struct AmoraDrawing: View {
     static let size = CGSize(width: 84, height: 88)
 
+    let coat: PetCoatDefinition
     let pose: PetPose?
     let clock: TimeInterval
     let reduceMotion: Bool
@@ -230,8 +234,8 @@ private struct AmoraDrawing: View {
 
     private var ears: some View {
         HStack(spacing: 18) {
-            ear(tilt: pose == .thinking ? -22 : -12, folded: false, spot: CGPoint(x: -3, y: 7))
-            ear(tilt: pose == .thinking ? 2 : 14, folded: true, spot: CGPoint(x: 3, y: 3))
+            ear(tilt: pose == .thinking ? -22 : -12, folded: coat.leftEarFolded, spot: CGPoint(x: -3, y: 7))
+            ear(tilt: pose == .thinking ? 2 : 14, folded: coat.rightEarFolded, spot: CGPoint(x: 3, y: 3))
         }
         .offset(y: 2)
     }
@@ -239,26 +243,26 @@ private struct AmoraDrawing: View {
     private func ear(tilt: Double, folded: Bool, spot: CGPoint) -> some View {
         ZStack {
             EarShape()
-                .fill(PetPalette.merle)
+                .fill(coat.base.color)
                 .frame(width: 21, height: 30)
             Ellipse()
-                .fill(PetPalette.merleDark)
+                .fill(coat.dark.color)
                 .frame(width: 9, height: 9)
                 .offset(x: spot.x, y: spot.y)
             EarShape()
-                .fill(PetPalette.innerEar)
+                .fill(coat.innerEar.color)
                 .frame(width: 9, height: 15)
                 .offset(y: 6)
             if folded {
                 // Semi-erect ear: the tip flops forward over the ear.
                 EarShape()
-                    .fill(PetPalette.merleDark)
+                    .fill(coat.dark.color)
                     .frame(width: 12, height: 9)
                     .rotationEffect(.degrees(180))
                     .offset(y: -8)
             } else {
                 EarShape()
-                    .fill(PetPalette.merleDark)
+                    .fill(coat.dark.color)
                     .frame(width: 8, height: 9)
                     .offset(y: -10)
             }
@@ -269,7 +273,7 @@ private struct AmoraDrawing: View {
 
     private func torso(clock: TimeInterval) -> some View {
         ZStack {
-            coat
+            coatMarkings
                 .frame(width: 66, height: 70)
                 .clipShape(HeadShape())
                 .overlay(HeadShape().stroke(PetPalette.ink.opacity(0.22), lineWidth: 1))
@@ -289,23 +293,22 @@ private struct AmoraDrawing: View {
         }
     }
 
-    private var coat: some View {
+    private var coatMarkings: some View {
         ZStack {
-            PetPalette.merle
-            ForEach(MerlePatch.all.indices, id: \.self) { index in
-                let patch = MerlePatch.all[index]
+            coat.base.color
+            ForEach(Array(coat.patches.enumerated()), id: \.offset) { _, patch in
                 Ellipse()
-                    .fill(patch.dark ? PetPalette.merleDark : PetPalette.merleLight)
-                    .frame(width: patch.size.width, height: patch.size.height)
+                    .fill(patch.dark ? coat.dark.color : coat.light.color)
+                    .frame(width: CGFloat(patch.width), height: CGFloat(patch.height))
                     .rotationEffect(.degrees(patch.angle))
-                    .offset(x: patch.center.x, y: patch.center.y)
+                    .offset(x: CGFloat(patch.centerX), y: CGFloat(patch.centerY))
             }
             BlazeShape()
-                .fill(PetPalette.coat)
-                .frame(width: 10, height: 22)
-                .offset(x: 1.5, y: -8)
+                .fill(coat.white.color)
+                .frame(width: 10 * CGFloat(coat.blazeScale), height: 22)
+                .offset(x: CGFloat(coat.blazeOffset), y: -8)
             Ellipse()
-                .fill(PetPalette.coat)
+                .fill(coat.white.color)
                 .frame(width: 26, height: 30)
                 .offset(y: 14)
         }
@@ -313,22 +316,24 @@ private struct AmoraDrawing: View {
 
     private var paw: some View {
         Circle()
-            .fill(PetPalette.coat)
+            .fill(coat.white.color)
             .overlay(Circle().stroke(PetPalette.ink.opacity(0.25), lineWidth: 0.8))
     }
 
     private func face(clock: TimeInterval) -> some View {
         ZStack {
-            HStack(spacing: 16) {
-                Ellipse().fill(PetPalette.copper).frame(width: 5, height: 3)
-                Ellipse().fill(PetPalette.copper).frame(width: 5, height: 3)
+            if coat.showPoints {
+                HStack(spacing: 16) {
+                    Ellipse().fill(PetPalette.copper).frame(width: 5, height: 3)
+                    Ellipse().fill(PetPalette.copper).frame(width: 5, height: 3)
+                }
+                .offset(y: -15)
+                HStack(spacing: 25) {
+                    Ellipse().fill(PetPalette.copper).frame(width: 6, height: 6)
+                    Ellipse().fill(PetPalette.copper).frame(width: 6, height: 6)
+                }
+                .offset(y: 7)
             }
-            .offset(y: -15)
-            HStack(spacing: 25) {
-                Ellipse().fill(PetPalette.copper).frame(width: 6, height: 6)
-                Ellipse().fill(PetPalette.copper).frame(width: 6, height: 6)
-            }
-            .offset(y: 7)
             eyes(clock: clock)
                 .offset(y: -8)
             Ellipse()
@@ -346,8 +351,8 @@ private struct AmoraDrawing: View {
             return reduceMotion ? 3 : sin(clock * 1.2) * 3
         }()
         return HStack(spacing: 14) {
-            eye(iris: PetPalette.brownEye)
-            eye(iris: PetPalette.blueEye)
+            eye(iris: coat.leftEye.color)
+            eye(iris: coat.rightEye.color)
         }
         .offset(x: look)
     }
@@ -410,35 +415,10 @@ private struct AmoraDrawing: View {
 }
 
 private enum PetPalette {
-    static let merle = Color(red: 0.60, green: 0.65, blue: 0.72)
-    static let merleLight = Color(red: 0.78, green: 0.82, blue: 0.87)
-    static let merleDark = Color(red: 0.21, green: 0.24, blue: 0.29)
     static let coat = Color(red: 0.97, green: 0.96, blue: 0.94)
     static let copper = Color(red: 0.80, green: 0.53, blue: 0.32)
-    static let innerEar = Color(red: 0.83, green: 0.66, blue: 0.67)
-    static let blueEye = Color(red: 0.42, green: 0.72, blue: 0.92)
-    static let brownEye = Color(red: 0.42, green: 0.26, blue: 0.16)
     static let tongue = Color(red: 0.93, green: 0.47, blue: 0.52)
     static let ink = Color(red: 0.13, green: 0.14, blue: 0.17)
-}
-
-private struct MerlePatch {
-    let center: CGPoint
-    let size: CGSize
-    let angle: Double
-    let dark: Bool
-
-    static let all: [MerlePatch] = [
-        MerlePatch(center: CGPoint(x: -20, y: -20), size: CGSize(width: 30, height: 22), angle: -20, dark: true),
-        MerlePatch(center: CGPoint(x: 22, y: -8), size: CGSize(width: 24, height: 32), angle: 15, dark: true),
-        MerlePatch(center: CGPoint(x: -28, y: 8), size: CGSize(width: 14, height: 18), angle: 0, dark: true),
-        MerlePatch(center: CGPoint(x: 10, y: -28), size: CGSize(width: 10, height: 7), angle: 30, dark: true),
-        MerlePatch(center: CGPoint(x: 26, y: 16), size: CGSize(width: 9, height: 7), angle: 0, dark: true),
-        MerlePatch(center: CGPoint(x: -12, y: -28), size: CGSize(width: 12, height: 8), angle: 10, dark: false),
-        MerlePatch(center: CGPoint(x: 18, y: -20), size: CGSize(width: 8, height: 6), angle: -25, dark: false),
-        MerlePatch(center: CGPoint(x: -22, y: -4), size: CGSize(width: 7, height: 9), angle: 0, dark: false),
-        MerlePatch(center: CGPoint(x: 28, y: 2), size: CGSize(width: 6, height: 8), angle: 0, dark: false),
-    ]
 }
 
 private struct EarShape: Shape {

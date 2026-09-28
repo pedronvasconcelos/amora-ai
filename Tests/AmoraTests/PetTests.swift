@@ -14,6 +14,7 @@ import Testing
     #expect(preferences.pets.count == 1)
     #expect(preferences.pets[0].isVisible == true)
     #expect(preferences.pets[0].origin == nil)
+    #expect(preferences.pets[0].scope == .everyone)
     #expect(preferences.activePetID == preferences.pets[0].id)
     #expect(preferences.canAddPet == true)
 
@@ -158,7 +159,87 @@ import Testing
     let preferences = PetPreferences(defaults: defaults)
     #expect(preferences.pets.map(\.id) == [id])
     #expect(preferences.pets[0].modelID == nil)
+    #expect(preferences.pets[0].scope == .everyone)
     #expect(preferences.pets[0].origin == CGPoint(x: 10, y: 20))
+}
+
+@MainActor
+@Test func agentPetsKeepTheirScope() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let first = preferences.pets[0].id
+    let screen = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    preferences.addPet(scope: .cursor, windowSize: PetMetrics.size, screenFrame: screen)
+    preferences.addPet(scope: .codex, windowSize: PetMetrics.size, screenFrame: screen)
+    preferences.addPet(scope: .claude, windowSize: PetMetrics.size, screenFrame: screen)
+    #expect(preferences.pets.map(\.scope) == [.everyone, .cursor, .codex, .claude])
+
+    preferences.setScope(.claude, for: first)
+    preferences.setScope(.claude, for: first)
+    #expect(preferences.pets[0].scope == .claude)
+    let restored = PetPreferences(defaults: defaults)
+    #expect(restored.pets.map(\.scope) == [.claude, .cursor, .codex, .claude])
+    #expect(restored.pets.map(\.id) == preferences.pets.map(\.id))
+}
+
+@Test func builtInColliesFollowEachAgent() {
+    #expect(builtinPet(for: .everyone) == BuiltinPet(name: "Amora", coat: .blueMerle))
+    #expect(builtinPet(for: .cursor) == BuiltinPet(name: "Luna", coat: .blackAndWhite))
+    #expect(builtinPet(for: .codex) == BuiltinPet(name: "Storm", coat: .slateMerle))
+    #expect(builtinPet(for: .claude) == BuiltinPet(name: "Duna", coat: .brownAndWhite))
+    #expect(petDisplayName(scope: .cursor, modelName: nil) == "Luna")
+    #expect(petDisplayName(scope: .codex, modelName: "Codie") == "Codie")
+
+    let amora = coatDefinition(.blueMerle)
+    let storm = coatDefinition(.slateMerle)
+    let luna = coatDefinition(.blackAndWhite)
+    let duna = coatDefinition(.brownAndWhite)
+    #expect(storm != amora)
+    #expect(storm.patches != amora.patches)
+    #expect(storm.base.blue - storm.base.red < 0.05)
+    #expect(amora.base.blue - amora.base.red > 0.08)
+    #expect(storm.leftEye == storm.rightEye)
+    #expect(amora.leftEye != amora.rightEye)
+    #expect(storm.leftEarFolded != amora.leftEarFolded)
+    #expect(storm.rightEarFolded != amora.rightEarFolded)
+    #expect(luna.patches.isEmpty)
+    #expect(luna.base.red < 0.2)
+    #expect(luna.leftEye == luna.rightEye)
+    #expect(duna.patches.isEmpty)
+    #expect(duna.base.red > duna.base.blue)
+    #expect(duna.showPoints == false)
+    #expect(amora.showPoints == true)
+}
+
+@Test func agentPetFollowsOnlyThatAgent() {
+    let agents = [
+        AgentActivity(source: .cursor, activity: .thinking, project: "amora-ai"),
+        AgentActivity(source: .claude, activity: .working),
+        AgentActivity(source: .codex, activity: .waiting)
+    ]
+    #expect(agentsForPet(scope: .everyone, agents: agents) == agents)
+    #expect(agentsForPet(scope: .cursor, agents: agents) == [agents[0]])
+    #expect(agentsForPet(scope: .codex, agents: agents) == [agents[2]])
+    #expect(agentsForPet(scope: .claude, agents: agents) == [agents[1]])
+    #expect(agentsForPet(scope: .cursor, agents: []) == [])
+    #expect(petPose(for: leadingActivity(agentsForPet(scope: .cursor, agents: agents))?.activity) == .thinking)
+    #expect(petPose(for: leadingActivity(agentsForPet(scope: .codex, agents: agents))?.activity) == .waiting)
+    #expect(petPose(for: leadingActivity(agentsForPet(scope: .claude, agents: []))?.activity) == .resting)
+    #expect(petAccessibilityLabel(
+        for: agentsForPet(scope: .cursor, agents: []),
+        name: petDisplayName(scope: .cursor, modelName: nil)
+    ) == "Luna, resting")
+    #expect(petAccessibilityLabel(
+        for: agentsForPet(scope: .codex, agents: agents),
+        name: "Storm"
+    ) == "Codex, waiting")
+    #expect(petAccessibilityLabel(
+        for: agentsForPet(scope: .claude, agents: agents),
+        isActive: true,
+        name: "Duna"
+    ) == "Claude Code, working, active")
 }
 
 @Test func placesTheNextPetAwayFromThePreviousOne() {
@@ -342,7 +423,12 @@ import Testing
     #expect(petResizeEdge(at: CGPoint(x: 50, y: size.height - 8), in: size) == .top)
     #expect(petResizeEdge(at: CGPoint(x: 8, y: size.height - 8), in: size) == .topLeft)
     #expect(petResizeEdge(at: CGPoint(x: size.width - 8, y: 8), in: size) == .bottomRight)
+    #expect(petResizeEdge(at: CGPoint(x: 24, y: 64), in: size) == .left)
     #expect(petResizeEdge(at: CGPoint(x: 50, y: 64), in: size) == nil)
+
+    let large = PetMetrics.size(for: PetMetrics.maximumScale)
+    #expect(petResizeEdge(at: CGPoint(x: 40, y: large.height / 2), in: large) == .left)
+    #expect(petResizeEdge(at: CGPoint(x: large.width / 2, y: large.height / 2), in: large) == nil)
 }
 
 @Test func petContentFillsThePanel() {

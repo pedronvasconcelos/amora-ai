@@ -3,7 +3,7 @@ import SwiftUI
 struct PetManagerView: View {
     @ObservedObject var preferences: PetPreferences
     @ObservedObject var library: PetModelLibrary
-    let addPet: (String?) -> Void
+    let addPet: (String?, PetScope) -> Void
     let registerModel: () -> Void
     @State private var message: String?
 
@@ -15,21 +15,26 @@ struct PetManagerView: View {
                         Text("Desktop pets").font(.headline)
                         Spacer()
                         Menu("Add pet") {
-                            Button("Amora") { addPet(nil) }
+                            ForEach(PetScope.allCases) { scope in
+                                let builtin = builtinPet(for: scope)
+                                Button("\(builtin.name) — \(scope.label)") {
+                                    addPet(nil, scope)
+                                }
+                            }
                             if !library.models.isEmpty {
                                 Divider()
                             }
                             ForEach(library.models) { model in
-                                Button(model.manifest.displayName) { addPet(model.id) }
+                                Button(model.manifest.displayName) { addPet(model.id, .everyone) }
                             }
                         }
                         .fixedSize()
                         .disabled(!preferences.canAddPet)
                     }
-                    ForEach(Array(preferences.pets.enumerated()), id: \.element.id) { index, pet in
-                        PetRow(preferences: preferences, library: library, pet: pet, number: index + 1)
+                    ForEach(preferences.pets) { pet in
+                        PetRow(preferences: preferences, library: library, pet: pet)
                     }
-                    Text("Up to \(PetPreferences.maximumPets) pets. Each pet keeps its own model, position, and visibility.")
+                    Text("Up to \(PetPreferences.maximumPets) pets. A pet can follow all agents or only one of them. Each pet keeps its own model, position, and visibility.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -52,7 +57,15 @@ struct PetManagerView: View {
                         .accessibilityLabel("Reload models")
                         Button("Register model…", action: registerModel)
                     }
-                    ModelRow(model: nil, subtitle: "Built in") {}
+                    ForEach(PetScope.allCases) { scope in
+                        let builtin = builtinPet(for: scope)
+                        ModelRow(
+                            model: nil,
+                            coat: coatDefinition(builtin.coat),
+                            title: builtin.name,
+                            subtitle: "Built in · \(scope.label)"
+                        ) {}
+                    }
                     ForEach(library.models) { model in
                         ModelRow(model: model, subtitle: model.manifest.description) {
                             remove(model)
@@ -74,7 +87,7 @@ struct PetManagerView: View {
             }
         }
         .padding(20)
-        .frame(width: 520)
+        .frame(width: 640)
     }
 
     private var codexNote: String {
@@ -99,37 +112,50 @@ private struct PetRow: View {
     @ObservedObject var preferences: PetPreferences
     @ObservedObject var library: PetModelLibrary
     let pet: DesktopPet
-    let number: Int
 
     private var isActive: Bool { preferences.activePetID == pet.id }
     private var model: PetModel? { library.model(id: pet.modelID) }
+    private var builtin: BuiltinPet { builtinPet(for: pet.scope) }
+    private var displayName: String { petDisplayName(scope: pet.scope, modelName: model?.manifest.displayName) }
 
     var body: some View {
         HStack(spacing: 10) {
-            PetModelThumbnail(model: model)
+            PetModelThumbnail(model: model, coat: coatDefinition(builtin.coat))
             VStack(alignment: .leading, spacing: 2) {
-                Text("Pet \(number)")
-                Text(isActive ? "Active" : (pet.isVisible ? "Visible" : "Hidden"))
+                Text(displayName)
+                Text(status)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            .frame(width: 108, alignment: .leading)
+            Picker("Follows", selection: Binding(
+                get: { pet.scope },
+                set: { preferences.setScope($0, for: pet.id) }
+            )) {
+                ForEach(PetScope.allCases) { scope in
+                    Text(scope.label).tag(scope)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 120)
+            .accessibilityLabel("Who \(displayName) follows")
             Picker("Model", selection: Binding(
                 get: { model?.id ?? "" },
                 set: { preferences.setModel($0.isEmpty ? nil : $0, for: pet.id) }
             )) {
-                Text("Amora").tag("")
+                Text(builtin.name).tag("")
                 ForEach(library.models) { model in
                     Text(model.manifest.displayName).tag(model.id)
                 }
             }
             .labelsHidden()
-            .frame(width: 140)
-            .accessibilityLabel("Model for Pet \(number)")
+            .frame(width: 120)
+            .accessibilityLabel("Model for \(displayName)")
+            Spacer(minLength: 8)
             Button(pet.isVisible ? "Hide" : "Show") {
                 preferences.setVisible(!pet.isVisible, for: pet.id)
             }
-            .accessibilityLabel("\(pet.isVisible ? "Hide" : "Show") Pet \(number)")
+            .accessibilityLabel("\(pet.isVisible ? "Hide" : "Show") \(displayName)")
             Button {
                 preferences.setActive(pet.id)
             } label: {
@@ -137,7 +163,7 @@ private struct PetRow: View {
             }
             .disabled(isActive)
             .help("Make active")
-            .accessibilityLabel("Make Pet \(number) active")
+            .accessibilityLabel("Make \(displayName) active")
             Button {
                 preferences.removePet(pet.id)
             } label: {
@@ -145,21 +171,28 @@ private struct PetRow: View {
             }
             .disabled(!preferences.canRemovePet)
             .help("Remove pet")
-            .accessibilityLabel("Remove Pet \(number)")
+            .accessibilityLabel("Remove \(displayName)")
         }
+    }
+
+    private var status: String {
+        let visibility = isActive ? "Active" : (pet.isVisible ? "Visible" : "Hidden")
+        return "\(pet.scope.label) · \(visibility)"
     }
 }
 
 private struct ModelRow: View {
     let model: PetModel?
+    var coat: PetCoatDefinition = coatDefinition(.blueMerle)
+    var title: String?
     let subtitle: String
     let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            PetModelThumbnail(model: model)
+            PetModelThumbnail(model: model, coat: coat)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model?.manifest.displayName ?? "Amora")
+                Text(title ?? model?.manifest.displayName ?? "Amora")
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)

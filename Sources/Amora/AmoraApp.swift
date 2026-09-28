@@ -145,11 +145,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func addPet(modelID: String?) {
+    private func addPet(modelID: String?, scope: PetScope) {
         let screen = NSScreen.main?.visibleFrame
             ?? NSScreen.screens.first?.visibleFrame
             ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        petPreferences.addPet(modelID: modelID, windowSize: PetMetrics.size, screenFrame: screen)
+        petPreferences.addPet(modelID: modelID, scope: scope, windowSize: PetMetrics.size, screenFrame: screen)
     }
 
     private func showPets() {
@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: PetManagerView(
                 preferences: petPreferences,
                 library: petModels,
-                addPet: { [weak self] modelID in self?.addPet(modelID: modelID) },
+                addPet: { [weak self] modelID, scope in self?.addPet(modelID: modelID, scope: scope) },
                 registerModel: { [weak self] in self?.showRegistration() }
             )
         )
