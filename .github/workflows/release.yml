@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and publish
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package
+        run: sh scripts/package.sh
+        env:
+          AMORA_VERSION: ${{ github.ref_name }}
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          notes="Download Amora-${version}-arm64.dmg for Apple Silicon.
+
+          Open the disk image and drag Amora into Applications. Amora is unsigned, so the first time you open it, Control-click Amora, choose Open, then choose Open again. After that, the paw icon appears in the menu bar.
+
+          Requires macOS 14 or later. Swift and Xcode are not required."
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Amora-${version}-arm64.dmg" \
+            --title "Amora $version" \
+            --notes "$notes"
