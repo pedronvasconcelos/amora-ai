@@ -1,17 +1,38 @@
 # Amora
 
-<p align="center">
-  <img src="assets/icon.png" alt="Amora" width="180">
-</p>
+![Amora app icon](assets/icon.png)
 
-A Mac assistant that hangs out on your desktop while your coding agents work.
+Amora is an early macOS menu bar prototype that displays the latest activity reported by Codex. It receives local Codex lifecycle hooks over a Unix socket and shows the activity in a small menu bar popover.
 
-Cursor, Claude Code, Codex, OpenCode. Amora listens to all of them and shows it on one pet. Thinking, in a tool, waiting on you, done. You don't have to click through four apps to see which one stalled.
+Amora currently supports Codex activity only. It does not yet include the floating pet, Cursor or Claude Code integrations, research features, Settings, launch at login, or a downloadable app installer.
 
-She also does the looking-around. Docs, a thread, a question you don't want to paste into the agent yet. The research stays next to the code, with the same dog on screen.
+## Requirements
 
-Nothing gets installed inside those tools. A small hook tells Amora what just happened. If she isn't running, the agent keeps going.
+- macOS 14 or later
+- Swift 6.2 or later
 
-Menu bar app. She floats above your windows, on every Space, and gets out of the way when you need the screen.
+## Run from source
 
-Open source, under the MIT license. Mac only. Named after a real Border Collie.
+```sh
+git clone https://github.com/pedronvasconcelos/amora-ai.git
+cd amora-ai
+swift run Amora
+```
+
+`swift run` stays open while the menu bar app is running. Click the paw icon in the menu bar to see the latest activity and install or remove Codex hooks. Quit Amora from that menu or press `Ctrl+C` in the Terminal.
+
+To enable Codex activity, choose **Install Codex Hooks** in the Amora menu, then review and trust its hooks in Codex settings or with `/hooks` in the Codex CLI. The hook sends only a fixed activity value to Amora; it does not forward prompts, files, or tool input and output. If Amora is not running, the hook exits without interrupting Codex.
+
+## Test
+
+```sh
+swift test
+```
+
+## Project status
+
+This is an early, work-in-progress prototype. You can run it from source and connect Codex activity, but there is no packaged `.app` or `.dmg` release yet. Contributions and focused bug reports are welcome.
+
+## License
+
+Amora is available under the [MIT License](LICENSE).
