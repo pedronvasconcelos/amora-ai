@@ -188,10 +188,13 @@ import Testing
     #expect(petPose(for: .working) == .working)
     #expect(petPose(for: .waiting) == .waiting)
     #expect(petPose(for: .finished) == .finished)
-    let event = ActivityEvent.decode(Data(#"{"v":1,"source":"cursor","activity":"thinking"}"#.utf8))
-    #expect(petAccessibilityLabel(for: event) == "Cursor, thinking")
-    #expect(petAccessibilityLabel(for: nil) == "Amora, resting")
-    #expect(petAccessibilityLabel(for: nil, isActive: true) == "Amora, resting, active")
+    #expect(petAccessibilityLabel(for: [AgentActivity(source: .cursor, activity: .thinking)]) == "Cursor, thinking")
+    #expect(petAccessibilityLabel(for: [
+        AgentActivity(source: .cursor, activity: .thinking),
+        AgentActivity(source: .codex, activity: .waiting)
+    ], isActive: true) == "Cursor, thinking; Codex, waiting, active")
+    #expect(petAccessibilityLabel(for: []) == "Amora, resting")
+    #expect(petAccessibilityLabel(for: [], isActive: true) == "Amora, resting, active")
 }
 
 @MainActor
