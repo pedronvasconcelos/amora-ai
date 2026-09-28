@@ -20,6 +20,15 @@ func readDocument(_ url: URL) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
 }
 
+/// The activity socket is drained on a timer. Yield until that timer has delivered the event.
+@MainActor
+func waitUntil(_ condition: () -> Bool) async {
+    let deadline = Date().addingTimeInterval(1)
+    while !condition(), Date() < deadline {
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+}
+
 @MainActor
 func runHook(
     _ command: String,
