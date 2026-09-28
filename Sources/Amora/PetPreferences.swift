@@ -8,6 +8,7 @@ struct DesktopPet: Codable, Identifiable, Equatable {
     var isVisible: Bool
     var modelID: String?
     var scale: Double?
+    var scope: PetScope
 
     var origin: CGPoint? {
         guard let originX, let originY else { return nil }
@@ -19,7 +20,8 @@ struct DesktopPet: Codable, Identifiable, Equatable {
         origin: CGPoint? = nil,
         isVisible: Bool,
         modelID: String? = nil,
-        scale: Double? = nil
+        scale: Double? = nil,
+        scope: PetScope = .everyone
     ) {
         self.id = id
         self.originX = origin.map { Double($0.x) }
@@ -27,6 +29,33 @@ struct DesktopPet: Codable, Identifiable, Equatable {
         self.isVisible = isVisible
         self.modelID = modelID
         self.scale = scale
+        self.scope = scope
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, originX, originY, isVisible, modelID, scale, scope
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        originX = try container.decodeIfPresent(Double.self, forKey: .originX)
+        originY = try container.decodeIfPresent(Double.self, forKey: .originY)
+        isVisible = try container.decode(Bool.self, forKey: .isVisible)
+        modelID = try container.decodeIfPresent(String.self, forKey: .modelID)
+        scale = try container.decodeIfPresent(Double.self, forKey: .scale)
+        scope = try container.decodeIfPresent(PetScope.self, forKey: .scope) ?? .everyone
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(originX, forKey: .originX)
+        try container.encodeIfPresent(originY, forKey: .originY)
+        try container.encode(isVisible, forKey: .isVisible)
+        try container.encodeIfPresent(modelID, forKey: .modelID)
+        try container.encodeIfPresent(scale, forKey: .scale)
+        try container.encode(scope, forKey: .scope)
     }
 }
 
@@ -78,10 +107,10 @@ final class PetPreferences: ObservableObject {
         pet(id)?.origin
     }
 
-    func addPet(modelID: String? = nil, windowSize: CGSize, screenFrame: CGRect) {
+    func addPet(modelID: String? = nil, scope: PetScope = .everyone, windowSize: CGSize, screenFrame: CGRect) {
         guard canAddPet else { return }
         let origin = nextPetOrigin(after: pets.last?.origin, windowSize: windowSize, screenFrame: screenFrame)
-        let pet = DesktopPet(id: UUID(), origin: origin, isVisible: true, modelID: modelID)
+        let pet = DesktopPet(id: UUID(), origin: origin, isVisible: true, modelID: modelID, scope: scope)
         pets.append(pet)
         activePetID = pet.id
         persist()
@@ -96,6 +125,12 @@ final class PetPreferences: ObservableObject {
         }
         persist()
         onPetsChanged?()
+    }
+
+    func setScope(_ scope: PetScope, for id: UUID) {
+        guard let index = pets.firstIndex(where: { $0.id == id }), pets[index].scope != scope else { return }
+        pets[index].scope = scope
+        persist()
     }
 
     func setModel(_ modelID: String?, for id: UUID) {
