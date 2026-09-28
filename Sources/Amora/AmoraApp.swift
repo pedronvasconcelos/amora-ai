@@ -23,7 +23,9 @@ final class ActivityState: ObservableObject {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = ActivityState()
     private let settings = SettingsModel()
+    private let petPreferences = PetPreferences()
     private var receiver: ActivityReceiver?
+    private var petPanel: PetPanelController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private let popover = NSPopover()
@@ -36,8 +38,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
-            rootView: ActivityMenu(state: state, openSettings: { [weak self] in self?.showSettings() })
+            rootView: ActivityMenu(
+                state: state,
+                preferences: petPreferences,
+                openSettings: { [weak self] in self?.showSettings() },
+                setPetVisible: { [weak self] visible in self?.setPetVisible(visible) }
+            )
         )
+        let panel = PetPanelController(preferences: petPreferences, content: PetView(state: state))
+        petPanel = panel
+        if petPreferences.isVisible {
+            panel.show()
+        }
         settings.applyStoredLaunchAtLogin()
         let receiver = ActivityReceiver { [weak self] event in
             self?.state.event = event
@@ -61,6 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    private func setPetVisible(_ visible: Bool) {
+        petPreferences.setVisible(visible)
+        if visible {
+            petPanel?.show()
+        } else {
+            petPanel?.hide()
         }
     }
 
@@ -92,7 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
+    @ObservedObject var preferences: PetPreferences
     let openSettings: () -> Void
+    let setPetVisible: (Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -107,6 +130,9 @@ private struct ActivityMenu: View {
                 Text("Waiting for activity").foregroundStyle(.secondary)
             }
             Divider()
+            Button(preferences.isVisible ? "Hide pet" : "Show pet") {
+                setPetVisible(!preferences.isVisible)
+            }
             Button("Settings…", action: openSettings)
             Divider()
             Button("Quit Amora") { NSApplication.shared.terminate(nil) }
