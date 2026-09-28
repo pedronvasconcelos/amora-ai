@@ -24,11 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = ActivityState()
     private let settings = SettingsModel()
     private let petPreferences = PetPreferences()
+    private let agentApps = AgentApps()
     private var receiver: ActivityReceiver?
     private var petPanels: [UUID: PetPanelController] = [:]
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private let popover = NSPopover()
+    private var menuAnchor: MenuAnchor?
+    private var closedAnchor: MenuAnchor?
+    private var closedAt: TimeInterval = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -37,10 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.action = #selector(toggleMenu)
         statusItem = item
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: ActivityMenu(
                 state: state,
                 preferences: petPreferences,
+                apps: agentApps,
                 openSettings: { [weak self] in self?.showSettings() },
                 setPetVisible: { [weak self] visible in self?.setPetVisible(visible) },
                 addPet: { [weak self] in self?.addPet() },
@@ -67,10 +73,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleMenu() {
         guard let button = statusItem?.button else { return }
-        if popover.isShown {
+        presentMenu(anchor: .statusItem, view: button, edge: .minY)
+    }
+
+    private func presentMenu(anchor: MenuAnchor, view: NSView, edge: NSRectEdge) {
+        if closedAnchor == anchor, ProcessInfo.processInfo.systemUptime - closedAt < 0.3 {
+            closedAnchor = nil
+            return
+        }
+        closedAnchor = nil
+        agentApps.refresh()
+        switch menuToggle(isShown: popover.isShown, current: menuAnchor, requested: anchor) {
+        case .close:
             popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        case .show:
+            if case .pet = anchor {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: edge)
+            menuAnchor = anchor
+            applyMenuHost(anchor)
+        }
+    }
+
+    private func applyMenuHost(_ anchor: MenuAnchor) {
+        for panel in petPanels.values {
+            panel.setHostsMenu(false)
+        }
+        if case .pet(let id) = anchor, let panel = petPanels[id] {
+            panel.setHostsMenu(true)
         }
     }
 
@@ -90,7 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferences: petPreferences,
             content: PetView(state: state, preferences: petPreferences, petID: id),
             onSelect: { [weak self] in
-                self?.petPreferences.setActive(id)
+                guard let self else { return }
+                self.petPreferences.setActive(id)
+                guard let panel = self.petPanels[id] else { return }
+                self.presentMenu(anchor: .pet(id), view: panel.menuAnchorView, edge: .maxY)
             }
         )
     }
@@ -144,9 +178,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        closedAnchor = menuAnchor
+        closedAt = ProcessInfo.processInfo.systemUptime
+        menuAnchor = nil
+        for panel in petPanels.values {
+            panel.setHostsMenu(false)
+        }
+    }
+}
+
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
     @ObservedObject var preferences: PetPreferences
+    @ObservedObject var apps: AgentApps
     let openSettings: () -> Void
     let setPetVisible: (Bool) -> Void
     let addPet: () -> Void
@@ -167,6 +213,11 @@ private struct ActivityMenu: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("Waiting for activity").foregroundStyle(.secondary)
+            }
+            Divider()
+            Text("Apps").font(.headline)
+            ForEach(apps.listings) { listing in
+                AgentAppRow(apps: apps, listing: listing)
             }
             Divider()
             Button(activePetIsVisible ? "Hide pet" : "Show pet") {
@@ -192,6 +243,47 @@ private struct ActivityMenu: View {
             Button("Quit Amora") { NSApplication.shared.terminate(nil) }
         }
         .padding(16)
-        .frame(width: 240, alignment: .leading)
+        .frame(width: 300, alignment: .leading)
+    }
+}
+
+private struct AgentAppRow: View {
+    @ObservedObject var apps: AgentApps
+    let listing: AgentAppListing
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                apps.open(listing.kind)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(listing.name)
+                        Text(listing.state.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(listing.state == .notInstalled)
+            .accessibilityLabel("Open \(listing.name)")
+            if listing.state == .running {
+                Button("Close") {
+                    apps.close(listing.kind)
+                }
+                .accessibilityLabel("Close \(listing.name)")
+            }
+        }
+    }
+
+    private var icon: NSImage {
+        apps.icon(for: listing.kind)
+            ?? NSImage(systemSymbolName: "app", accessibilityDescription: listing.name)
+            ?? NSImage()
     }
 }

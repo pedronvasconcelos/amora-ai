@@ -171,6 +171,10 @@ import Testing
     #expect(window.isOpaque == false)
     #expect(window.canBecomeKey == false)
     #expect(window.canBecomeMain == false)
+    panel.setHostsMenu(true)
+    #expect(window.canBecomeKey == true)
+    panel.setHostsMenu(false)
+    #expect(window.canBecomeKey == false)
 
     panel.place(on: screen)
     let placed = clampedPetOrigin(
