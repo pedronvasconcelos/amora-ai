@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let petPreferences = PetPreferences()
     private let petModels = PetModelLibrary()
     private let agentApps = AgentApps()
+    private let agenda = CalendarAgenda()
     private var receiver: ActivityReceiver?
     private var petPanels: [UUID: PetPanelController] = [:]
     private var statusItem: NSStatusItem?
@@ -56,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: ActivityMenu(
                 state: state,
                 apps: agentApps,
+                agenda: agenda,
                 openPets: { [weak self] in self?.showPets() },
                 openSettings: { [weak self] in self?.showSettings() }
             )
@@ -63,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petPreferences.onPetsChanged = { [weak self] in self?.syncPetPanels() }
         syncPetPanels()
         settings.applyStoredLaunchAtLogin()
+        agenda.startMonitoring()
         let receiver = ActivityReceiver { [weak self] event in
             guard let self else { return }
             self.state.record(event)
@@ -78,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         receiver?.stop()
+        agenda.stopMonitoring()
     }
 
     @objc private func toggleMenu() {
@@ -92,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         closedAnchor = nil
         agentApps.refresh()
+        agenda.refresh()
         switch menuToggle(isShown: popover.isShown, current: menuAnchor, requested: anchor) {
         case .close:
             popover.performClose(nil)
@@ -135,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PetPanelController(
             petID: id,
             preferences: petPreferences,
-            content: PetView(state: state, preferences: petPreferences, library: petModels, petID: id),
+            content: PetView(state: state, preferences: petPreferences, library: petModels, agenda: agenda, petID: id),
             onSelect: { [weak self] in
                 guard let self else { return }
                 self.petPreferences.setActive(id)
@@ -199,26 +204,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettings() {
         popover.performClose(nil)
         settings.refresh()
-        let window = settingsWindow ?? makeSettingsWindow()
+        agenda.refresh()
+        let window = settingsWindow ?? makeAutosizingWindow(
+            title: "Settings",
+            rootView: SettingsView(model: settings, agenda: agenda)
+        )
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
-    }
-
-    private func makeSettingsWindow() -> NSWindow {
-        let controller = NSHostingController(rootView: SettingsView(model: settings))
-        let window = NSWindow(contentViewController: controller)
-        window.title = "Settings"
-        window.styleMask = [.titled, .closable]
-        window.isReleasedWhenClosed = false
-        controller.view.frame = NSRect(x: 0, y: 0, width: 420, height: 1)
-        controller.view.layoutSubtreeIfNeeded()
-        var size = controller.view.fittingSize
-        size.width = 420
-        if size.height < 300 || size.height > 640 { size.height = 420 }
-        window.setContentSize(size)
-        window.center()
-        return window
     }
 }
 
@@ -236,6 +229,7 @@ extension AppDelegate: NSPopoverDelegate {
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
     @ObservedObject var apps: AgentApps
+    @ObservedObject var agenda: CalendarAgenda
     let openPets: () -> Void
     let openSettings: () -> Void
 
@@ -266,6 +260,9 @@ private struct ActivityMenu: View {
             } else {
                 Text("Waiting for activity").foregroundStyle(.secondary)
             }
+            Divider()
+            Text("Agenda").font(.headline)
+            AgendaSection(agenda: agenda, openSettings: openSettings)
             Divider()
             Text("Apps").font(.headline)
             ForEach(apps.listings) { listing in

@@ -305,6 +305,7 @@ import Testing
                 directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
                 codexDirectory: nil
             ),
+            agenda: emptyAgenda(),
             petID: second
         )
     )
@@ -479,6 +480,7 @@ import Testing
                 directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
                 codexDirectory: nil
             ),
+            agenda: emptyAgenda(),
             petID: id
         )
     )
@@ -535,6 +537,7 @@ import Testing
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
             codexDirectory: nil
         ),
+        agenda: emptyAgenda(),
         petID: id
     )
     .frame(width: size.width, height: size.height)

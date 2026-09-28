@@ -47,6 +47,7 @@ func petAnimation(for pose: PetPose) -> PetAnimation {
     case .working: .running
     case .waiting: .waiting
     case .finished: .jumping
+    case .reminding: .waving
     }
 }
 
