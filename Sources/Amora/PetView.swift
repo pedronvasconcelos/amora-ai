@@ -18,25 +18,39 @@ func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
     }
 }
 
-func petAccessibilityLabel(for event: ActivityEvent?) -> String {
-    guard let event else { return "Amora, resting" }
-    return "\(event.source.displayName), \(event.activity.rawValue)"
+func petAccessibilityLabel(for event: ActivityEvent?, isActive: Bool = false) -> String {
+    let base: String
+    if let event {
+        base = "\(event.source.displayName), \(event.activity.rawValue)"
+    } else {
+        base = "Amora, resting"
+    }
+    return isActive ? "\(base), active" : base
 }
 
 struct PetView: View {
     @ObservedObject var state: ActivityState
+    @ObservedObject var preferences: PetPreferences
+    let petID: UUID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var isActive: Bool { preferences.activePetID == petID }
+
     var body: some View {
-        PetFigure(pose: petPose(for: state.event?.activity), reduceMotion: reduceMotion)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(petAccessibilityLabel(for: state.event))
+        PetFigure(
+            pose: petPose(for: state.event?.activity),
+            reduceMotion: reduceMotion,
+            isActive: isActive
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(petAccessibilityLabel(for: state.event, isActive: isActive))
     }
 }
 
 private struct PetFigure: View {
     let pose: PetPose
     var reduceMotion: Bool
+    var isActive: Bool
     @State private var poseStarted = Date()
 
     var body: some View {
@@ -49,6 +63,13 @@ private struct PetFigure: View {
             poseStarted = Date()
         }
         .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
+        .overlay {
+            if isActive {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(PetPalette.ink.opacity(0.35), lineWidth: 1.5)
+                    .padding(8)
+            }
+        }
     }
 
     private func figure(clock: TimeInterval, elapsed: TimeInterval) -> some View {
