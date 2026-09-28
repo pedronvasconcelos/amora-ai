@@ -30,7 +30,8 @@ func clampedPetOrigin(_ origin: CGPoint, windowSize: CGSize, screenFrame: CGRect
 }
 
 final class PetPanelWindow: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var hostsMenu = false
+    override var canBecomeKey: Bool { hostsMenu }
     override var canBecomeMain: Bool { false }
 }
 
@@ -104,6 +105,19 @@ final class PetPanelController: NSObject, NSWindowDelegate {
 
     func hide() {
         window.orderOut(nil)
+    }
+
+    var menuAnchorView: NSView {
+        window.contentView!
+    }
+
+    func setHostsMenu(_ hosts: Bool) {
+        window.hostsMenu = hosts
+        if hosts {
+            window.makeKeyAndOrderFront(nil)
+        } else if window.isKeyWindow {
+            window.resignKey()
+        }
     }
 
     func windowDidMove(_ notification: Notification) {
