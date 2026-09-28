@@ -62,6 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
+    @State private var hookMessage: String?
+    private let codexHooks = CodexHooks()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -70,10 +72,30 @@ private struct ActivityMenu: View {
                 Text(error).foregroundStyle(.red)
             } else if let event = state.event {
                 Text(event.activity.rawValue.capitalized)
-                Text(event.source == .cursor ? "Cursor" : "Claude Code")
+                Text(event.source.displayName)
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("Waiting for activity").foregroundStyle(.secondary)
+            }
+            Divider()
+            Button("Install Codex Hooks") {
+                do {
+                    try codexHooks.install()
+                    hookMessage = "Installed. Review and trust Amora's hooks in Codex Hooks settings or /hooks in the CLI."
+                } catch {
+                    hookMessage = error.localizedDescription
+                }
+            }
+            Button("Remove Codex Hooks") {
+                do {
+                    try codexHooks.remove()
+                    hookMessage = "Amora's Codex hooks were removed."
+                } catch {
+                    hookMessage = error.localizedDescription
+                }
+            }
+            if let hookMessage {
+                Text(hookMessage).font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             Button("Quit Amora") { NSApplication.shared.terminate(nil) }
