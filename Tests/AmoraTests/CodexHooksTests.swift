@@ -18,6 +18,7 @@ import Testing
     ]
     try JSONSerialization.data(withJSONObject: original).write(to: configuration)
     let integration = CodexHooks(home: home, environment: ["CODEX_HOME": codexHome.path])
+    #expect(try integration.isInstalled() == false)
     try integration.install()
     let first = try Data(contentsOf: configuration)
     try integration.install()
@@ -25,7 +26,9 @@ import Testing
     let hooks = try #require(readDocument(configuration)["hooks"] as? [String: [[String: Any]]])
     #expect(hooks["Stop"]?.count == 2)
     #expect(hooks["UserPromptSubmit"]?.count == 1)
+    #expect(try integration.isInstalled())
     try integration.remove()
+    #expect(try integration.isInstalled() == false)
     #expect(try NSDictionary(dictionary: readDocument(configuration)).isEqual(to: original))
     try integration.remove()
     #expect(try NSDictionary(dictionary: readDocument(configuration)).isEqual(to: original))
@@ -44,6 +47,8 @@ import Testing
         #expect(throws: (any Error).self) { try integration.install() }
         #expect(try Data(contentsOf: configuration) == original)
         #expect(throws: (any Error).self) { try integration.remove() }
+        #expect(try Data(contentsOf: configuration) == original)
+        #expect(throws: (any Error).self) { try integration.isInstalled() }
         #expect(try Data(contentsOf: configuration) == original)
     }
 }
