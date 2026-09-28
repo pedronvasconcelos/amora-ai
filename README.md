@@ -67,7 +67,7 @@ swift test
 sh scripts/package.sh
 ```
 
-Writes `dist/Amora.app` and `dist/Amora-<version>-arm64.dmg`. Push a `v*` tag to publish a GitHub Release.
+Writes `dist/Amora.app` and `dist/Amora-<version>-arm64.dmg`. Push a version tag (`0.1.2` or `v0.1.2`) or create a release in the GitHub UI to build the disk image and attach it to the release. To backfill an existing tag, run the Release workflow manually with that tag.
 
 ## Project status
 
