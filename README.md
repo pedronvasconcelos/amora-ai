@@ -14,7 +14,7 @@ Amora is unsigned. The first time you open it, Control-click Amora in Applicatio
 
 The packaged app needs macOS 14 or later on Apple Silicon. It does not need Swift or Xcode.
 
-Click the paw icon to see the latest activity. Each agent that has reported shows what it is doing and the folder name of the project it is working in. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six), pick each pet's model, show or hide it, make it active, or remove it. Each pet keeps its own model and position on this Mac. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+Click the paw icon to see the latest activity. Each agent that has reported shows what it is doing and the folder name of the project it is working in. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six), pick each pet's model, show or hide it, make it active, or remove it. Each pet keeps its own model, size, and position on this Mac. Drag a pet to move it, or drag its edges and corners to resize it. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
 
 ### Pet models
 

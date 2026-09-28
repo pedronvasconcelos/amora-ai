@@ -7,18 +7,26 @@ struct DesktopPet: Codable, Identifiable, Equatable {
     var originY: Double?
     var isVisible: Bool
     var modelID: String?
+    var scale: Double?
 
     var origin: CGPoint? {
         guard let originX, let originY else { return nil }
         return CGPoint(x: originX, y: originY)
     }
 
-    init(id: UUID = UUID(), origin: CGPoint? = nil, isVisible: Bool, modelID: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        origin: CGPoint? = nil,
+        isVisible: Bool,
+        modelID: String? = nil,
+        scale: Double? = nil
+    ) {
         self.id = id
         self.originX = origin.map { Double($0.x) }
         self.originY = origin.map { Double($0.y) }
         self.isVisible = isVisible
         self.modelID = modelID
+        self.scale = scale
     }
 }
 
@@ -117,10 +125,26 @@ final class PetPreferences: ObservableObject {
         onPetsChanged?()
     }
 
+    func scale(for id: UUID) -> CGFloat {
+        clampedPetScale(CGFloat(pet(id)?.scale ?? Double(PetMetrics.defaultScale)))
+    }
+
     func setOrigin(_ origin: CGPoint, for id: UUID) {
         guard let index = pets.firstIndex(where: { $0.id == id }) else { return }
         pets[index].originX = Double(origin.x)
         pets[index].originY = Double(origin.y)
+        persist()
+    }
+
+    func setPlacement(origin: CGPoint, scale: CGFloat, for id: UUID) {
+        guard let index = pets.firstIndex(where: { $0.id == id }) else { return }
+        let resolved = Double(clampedPetScale(scale))
+        let x = Double(origin.x)
+        let y = Double(origin.y)
+        if pets[index].originX == x, pets[index].originY == y, pets[index].scale == resolved { return }
+        pets[index].originX = x
+        pets[index].originY = y
+        pets[index].scale = resolved
         persist()
     }
 

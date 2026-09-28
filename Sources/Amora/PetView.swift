@@ -18,6 +18,11 @@ func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
     }
 }
 
+func petContentScale(in size: CGSize, fallback: CGFloat) -> CGFloat {
+    guard size.width > 1, size.height > 1 else { return fallback }
+    return min(size.width / PetMetrics.size.width, size.height / PetMetrics.size.height)
+}
+
 func petAccessibilityLabel(for agents: [AgentActivity], isActive: Bool = false, name: String = "Amora") -> String {
     let base: String
     if agents.isEmpty {
@@ -46,29 +51,34 @@ struct PetView: View {
     var body: some View {
         let agents = state.agents
         let pose = petPose(for: leadingActivity(agents)?.activity)
-        Group {
-            if let model {
-                PetSpriteFigure(sprite: model.sprite, animation: petAnimation(for: pose), reduceMotion: reduceMotion)
-                    .padding(10)
-            } else {
-                PetFigure(pose: pose, reduceMotion: reduceMotion)
-            }
-        }
-        .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
-        .overlay {
-            if isActive {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(PetPalette.ink.opacity(0.35), lineWidth: 1.5)
-                    .padding(8)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if !agents.isEmpty {
-                HStack(spacing: 3) {
-                    ForEach(agents) { AgentActivityBadge(agent: $0) }
+        GeometryReader { proxy in
+            let scale = petContentScale(in: proxy.size, fallback: preferences.scale(for: petID))
+            Group {
+                if let model {
+                    PetSpriteFigure(sprite: model.sprite, animation: petAnimation(for: pose), reduceMotion: reduceMotion)
+                        .padding(10)
+                } else {
+                    PetFigure(pose: pose, reduceMotion: reduceMotion)
                 }
-                .padding(.bottom, 4)
             }
+            .frame(width: PetMetrics.size.width, height: PetMetrics.size.height)
+            .overlay {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(PetPalette.ink.opacity(0.35), lineWidth: 1.5)
+                        .padding(8)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !agents.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(agents) { AgentActivityBadge(agent: $0) }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+            .scaleEffect(scale)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(petAccessibilityLabel(

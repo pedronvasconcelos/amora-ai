@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Amora
 
@@ -254,6 +255,224 @@ import Testing
     #expect(window.frame.origin.y == placed.y)
     #expect(preferences.origin(for: second) == CGPoint(x: -500, y: -500))
     #expect(preferences.origin(for: first) == CGPoint(x: 40, y: 50))
+}
+
+@Test func resizeEdgesKeepTheOppositeSideAndThePetProportion() {
+    let initial = CGRect(x: 100, y: 200, width: 104, height: 128)
+    let screen = CGRect(x: 0, y: 0, width: 2_000, height: 1_600)
+    let aspect = initial.width / initial.height
+
+    let right = resizedPetFrame(
+        initialFrame: initial,
+        edge: .right,
+        initialMouse: CGPoint(x: initial.maxX, y: initial.midY),
+        mouse: CGPoint(x: initial.maxX + 52, y: initial.midY),
+        screenFrame: screen
+    )
+    #expect(abs(right.minX - initial.minX) < 0.01)
+    #expect(abs(right.midY - initial.midY) < 0.01)
+    #expect(abs(right.width - 156) < 0.01)
+    #expect(abs(right.width / right.height - aspect) < 0.001)
+
+    let top = resizedPetFrame(
+        initialFrame: initial,
+        edge: .top,
+        initialMouse: CGPoint(x: initial.midX, y: initial.maxY),
+        mouse: CGPoint(x: initial.midX, y: initial.maxY + 64),
+        screenFrame: screen
+    )
+    #expect(abs(top.minY - initial.minY) < 0.01)
+    #expect(abs(top.midX - initial.midX) < 0.01)
+    #expect(abs(top.height - 192) < 0.01)
+
+    let corner = resizedPetFrame(
+        initialFrame: initial,
+        edge: .bottomLeft,
+        initialMouse: CGPoint(x: initial.minX, y: initial.minY),
+        mouse: CGPoint(x: initial.minX - 52, y: initial.minY - 64),
+        screenFrame: screen
+    )
+    #expect(abs(corner.maxX - initial.maxX) < 0.01)
+    #expect(abs(corner.maxY - initial.maxY) < 0.01)
+    #expect(abs(corner.width - 156) < 0.01)
+}
+
+@Test func resizeClampsToTheCodexSizeRangeAndTheScreen() {
+    let initial = CGRect(x: 100, y: 200, width: PetMetrics.size.width, height: PetMetrics.size.height)
+    let huge = CGRect(x: 0, y: 0, width: 4_000, height: 3_000)
+    let grown = resizedPetFrame(
+        initialFrame: initial,
+        edge: .right,
+        initialMouse: CGPoint(x: initial.maxX, y: initial.midY),
+        mouse: CGPoint(x: initial.maxX + 2_000, y: initial.midY),
+        screenFrame: huge
+    )
+    let shrunk = resizedPetFrame(
+        initialFrame: initial,
+        edge: .right,
+        initialMouse: CGPoint(x: initial.maxX, y: initial.midY),
+        mouse: CGPoint(x: initial.minX, y: initial.midY),
+        screenFrame: huge
+    )
+    #expect(abs(grown.width - PetMetrics.size.width * PetMetrics.maximumScale) < 0.01)
+    #expect(abs(shrunk.width - PetMetrics.size.width * PetMetrics.minimumScale) < 0.01)
+    #expect(abs(grown.width / grown.height - PetMetrics.size.width / PetMetrics.size.height) < 0.001)
+
+    let screen = CGRect(x: 0, y: 0, width: 400, height: 400)
+    let nearEdge = CGRect(x: 250, y: 100, width: PetMetrics.size.width, height: PetMetrics.size.height)
+    let limited = resizedPetFrame(
+        initialFrame: nearEdge,
+        edge: .right,
+        initialMouse: CGPoint(x: nearEdge.maxX, y: nearEdge.midY),
+        mouse: CGPoint(x: nearEdge.maxX + 500, y: nearEdge.midY),
+        screenFrame: screen
+    )
+    #expect(limited.maxX <= screen.maxX + 0.01)
+    #expect(limited.minX >= screen.minX - 0.01)
+    #expect(abs(limited.minX - nearEdge.minX) < 0.01)
+    #expect(limited.maxY <= screen.maxY + 0.01)
+    #expect(limited.minY >= screen.minY - 0.01)
+}
+
+@Test func resizeHitTestingUsesTheEdgesAndCorners() {
+    let size = PetMetrics.size
+    #expect(petResizeEdge(at: CGPoint(x: 8, y: 64), in: size) == .left)
+    #expect(petResizeEdge(at: CGPoint(x: size.width - 8, y: 64), in: size) == .right)
+    #expect(petResizeEdge(at: CGPoint(x: 50, y: 8), in: size) == .bottom)
+    #expect(petResizeEdge(at: CGPoint(x: 50, y: size.height - 8), in: size) == .top)
+    #expect(petResizeEdge(at: CGPoint(x: 8, y: size.height - 8), in: size) == .topLeft)
+    #expect(petResizeEdge(at: CGPoint(x: size.width - 8, y: 8), in: size) == .bottomRight)
+    #expect(petResizeEdge(at: CGPoint(x: 50, y: 64), in: size) == nil)
+}
+
+@Test func petContentFillsThePanel() {
+    #expect(petContentScale(in: .zero, fallback: 1.4) == 1.4)
+    #expect(abs(petContentScale(in: PetMetrics.size, fallback: 1) - 1) < 0.001)
+    #expect(abs(petContentScale(in: CGSize(width: 208, height: 256), fallback: 1) - 2) < 0.001)
+}
+
+@MainActor
+@Test func petKeepsItsScale() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let id = preferences.pets[0].id
+    let counter = ChangeCounter()
+    preferences.onPetsChanged = { counter.count += 1 }
+    #expect(preferences.scale(for: id) == 1)
+    #expect(preferences.pets[0].scale == nil)
+
+    preferences.setPlacement(origin: CGPoint(x: 20, y: 30), scale: 9, for: id)
+    #expect(counter.count == 0)
+    #expect(abs(preferences.scale(for: id) - PetMetrics.maximumScale) < 0.001)
+    #expect(preferences.origin(for: id) == CGPoint(x: 20, y: 30))
+
+    preferences.setPlacement(origin: CGPoint(x: 20, y: 30), scale: 0.1, for: id)
+    let restored = PetPreferences(defaults: defaults)
+    #expect(abs(restored.scale(for: id) - PetMetrics.minimumScale) < 0.001)
+    #expect(restored.origin(for: id) == CGPoint(x: 20, y: 30))
+    #expect(restored.pets[0].id == id)
+}
+
+@MainActor
+@Test func petPanelOpensAtTheStoredScale() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let defaults = suite.defaults
+    let preferences = PetPreferences(defaults: defaults)
+    let id = preferences.pets[0].id
+    preferences.setPlacement(origin: CGPoint(x: 40, y: 50), scale: PetMetrics.maximumScale, for: id)
+    let panel = PetPanelController(
+        petID: id,
+        preferences: preferences,
+        content: PetView(
+            state: ActivityState(),
+            preferences: preferences,
+            library: PetModelLibrary(
+                directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                codexDirectory: nil
+            ),
+            petID: id
+        )
+    )
+    panel.place(on: CGRect(x: 0, y: 0, width: 1_000, height: 800))
+    let expected = PetMetrics.size(for: PetMetrics.maximumScale)
+    #expect(abs(panel.window.frame.width - expected.width) < 0.5)
+    #expect(abs(panel.window.frame.height - expected.height) < 0.5)
+    #expect(abs(panel.window.frame.origin.x - 40) < 0.5)
+    #expect(abs(panel.window.frame.origin.y - 50) < 0.5)
+    #expect(preferences.origin(for: id) == CGPoint(x: 40, y: 50))
+
+    panel.show()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+    panel.window.layoutIfNeeded()
+    let content = try #require(panel.window.contentView)
+    content.layoutSubtreeIfNeeded()
+    let rendered = NSImage(size: content.bounds.size)
+    rendered.lockFocus()
+    if let context = NSGraphicsContext.current?.cgContext {
+        content.layer?.render(in: context)
+    }
+    rendered.unlockFocus()
+    guard let tiff = rendered.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else {
+        Issue.record("The panel did not render")
+        return
+    }
+    var painted = 0
+    var y = 0
+    while y < rep.pixelsHigh {
+        var x = 0
+        while x < rep.pixelsWide {
+            if let color = rep.colorAt(x: x, y: y), color.alphaComponent > 0.3 {
+                painted += 1
+            }
+            x += 8
+        }
+        y += 8
+    }
+    #expect(painted > 10)
+    panel.hide()
+}
+
+@MainActor
+@Test func largerPanelStillDrawsThePet() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let preferences = PetPreferences(defaults: suite.defaults)
+    let id = preferences.pets[0].id
+    let size = PetMetrics.size(for: PetMetrics.maximumScale)
+    let view = PetView(
+        state: ActivityState(),
+        preferences: preferences,
+        library: PetModelLibrary(
+            directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+            codexDirectory: nil
+        ),
+        petID: id
+    )
+    .frame(width: size.width, height: size.height)
+    let renderer = ImageRenderer(content: view)
+    renderer.scale = 1
+    let image = try #require(renderer.nsImage)
+    guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else {
+        Issue.record("The pet image has no bitmap")
+        return
+    }
+    var painted = 0
+    let step = 6
+    var y = 0
+    while y < rep.pixelsHigh {
+        var x = 0
+        while x < rep.pixelsWide {
+            if let color = rep.colorAt(x: x, y: y), color.alphaComponent > 0.3 {
+                painted += 1
+            }
+            x += step
+        }
+        y += step
+    }
+    #expect(painted > 30)
 }
 
 @MainActor
