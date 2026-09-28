@@ -7,7 +7,8 @@ enum PetMetrics {
     static let minimumScale: CGFloat = 80.0 / 112.0
     static let maximumScale: CGFloat = 224.0 / 112.0
     static let defaultScale: CGFloat = 1
-    static let resizeMargin: CGFloat = 16
+    /// Share of the shorter side that grabs a resize. A fixed pixel edge is easy to miss on a borderless pet.
+    static let resizeMarginFraction: CGFloat = 0.3
 
     static func size(for scale: CGFloat) -> CGSize {
         let resolved = clampedPetScale(scale)
@@ -26,7 +27,9 @@ enum PetResizeEdge: Equatable {
 }
 
 func petResizeMargin(for size: CGSize) -> CGFloat {
-    min(PetMetrics.resizeMargin, min(size.width, size.height) * 0.3)
+    let shorter = min(size.width, size.height)
+    guard shorter > 1 else { return 0 }
+    return shorter * PetMetrics.resizeMarginFraction
 }
 
 func petResizeRegions(in size: CGSize) -> [(CGRect, PetResizeEdge)] {

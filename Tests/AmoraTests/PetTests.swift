@@ -423,7 +423,12 @@ import Testing
     #expect(petResizeEdge(at: CGPoint(x: 50, y: size.height - 8), in: size) == .top)
     #expect(petResizeEdge(at: CGPoint(x: 8, y: size.height - 8), in: size) == .topLeft)
     #expect(petResizeEdge(at: CGPoint(x: size.width - 8, y: 8), in: size) == .bottomRight)
+    #expect(petResizeEdge(at: CGPoint(x: 24, y: 64), in: size) == .left)
     #expect(petResizeEdge(at: CGPoint(x: 50, y: 64), in: size) == nil)
+
+    let large = PetMetrics.size(for: PetMetrics.maximumScale)
+    #expect(petResizeEdge(at: CGPoint(x: 40, y: large.height / 2), in: large) == .left)
+    #expect(petResizeEdge(at: CGPoint(x: large.width / 2, y: large.height / 2), in: large) == nil)
 }
 
 @Test func petContentFillsThePanel() {
