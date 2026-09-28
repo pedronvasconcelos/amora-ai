@@ -24,11 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = ActivityState()
     private let settings = SettingsModel()
     private let petPreferences = PetPreferences()
+    private let petModels = PetModelLibrary()
     private let agentApps = AgentApps()
     private var receiver: ActivityReceiver?
     private var petPanels: [UUID: PetPanelController] = [:]
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var petsWindow: NSWindow?
+    private var registrationWindow: NSWindow?
     private let popover = NSPopover()
     private var menuAnchor: MenuAnchor?
     private var closedAnchor: MenuAnchor?
@@ -45,15 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = NSHostingController(
             rootView: ActivityMenu(
                 state: state,
-                preferences: petPreferences,
                 apps: agentApps,
-                openSettings: { [weak self] in self?.showSettings() },
-                setPetVisible: { [weak self] visible in self?.setPetVisible(visible) },
-                addPet: { [weak self] in self?.addPet() },
-                choosePet: { [weak self] id in self?.petPreferences.setActive(id) }
+                openPets: { [weak self] in self?.showPets() },
+                openSettings: { [weak self] in self?.showSettings() }
             )
         )
-        installPetPanels()
+        petPreferences.onPetsChanged = { [weak self] in self?.syncPetPanels() }
+        syncPetPanels()
         settings.applyStoredLaunchAtLogin()
         let receiver = ActivityReceiver { [weak self] event in
             self?.state.event = event
@@ -105,12 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installPetPanels() {
-        for pet in petPreferences.pets where petPanels[pet.id] == nil {
-            let panel = makePanel(id: pet.id)
+    private func syncPetPanels() {
+        let ids = Set(petPreferences.pets.map(\.id))
+        for (id, panel) in petPanels where !ids.contains(id) {
+            panel.hide()
+            petPanels[id] = nil
+        }
+        for pet in petPreferences.pets {
+            let panel = petPanels[pet.id] ?? makePanel(id: pet.id)
             petPanels[pet.id] = panel
-            if pet.isVisible {
+            if pet.isVisible, !panel.window.isVisible {
                 panel.show()
+            } else if !pet.isVisible, panel.window.isVisible {
+                panel.hide()
             }
         }
     }
@@ -119,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PetPanelController(
             petID: id,
             preferences: petPreferences,
-            content: PetView(state: state, preferences: petPreferences, petID: id),
+            content: PetView(state: state, preferences: petPreferences, library: petModels, petID: id),
             onSelect: { [weak self] in
                 guard let self else { return }
                 self.petPreferences.setActive(id)
@@ -129,27 +137,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func setPetVisible(_ visible: Bool) {
-        let id = petPreferences.activePetID
-        petPreferences.setVisible(visible, for: id)
-        guard let panel = petPanels[id] else { return }
-        if visible {
-            panel.show()
-        } else {
-            panel.hide()
-        }
-    }
-
-    private func addPet() {
+    private func addPet(modelID: String?) {
         let screen = NSScreen.main?.visibleFrame
             ?? NSScreen.screens.first?.visibleFrame
             ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let existing = Set(petPreferences.pets.map(\.id))
-        petPreferences.addPet(windowSize: PetMetrics.size, screenFrame: screen)
-        guard let pet = petPreferences.pets.last, !existing.contains(pet.id) else { return }
-        let panel = makePanel(id: pet.id)
-        petPanels[pet.id] = panel
-        panel.show()
+        petPreferences.addPet(modelID: modelID, windowSize: PetMetrics.size, screenFrame: screen)
+    }
+
+    private func showPets() {
+        popover.performClose(nil)
+        petModels.reload()
+        let window = petsWindow ?? makeAutosizingWindow(
+            title: "Pets",
+            rootView: PetManagerView(
+                preferences: petPreferences,
+                library: petModels,
+                addPet: { [weak self] modelID in self?.addPet(modelID: modelID) },
+                registerModel: { [weak self] in self?.showRegistration() }
+            )
+        )
+        petsWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    private func showRegistration() {
+        let window = registrationWindow ?? makeAutosizingWindow(
+            title: "Register Pet Model",
+            rootView: PetModelRegistrationView(
+                library: petModels,
+                onRegistered: { [weak self] _ in
+                    self?.registrationWindow?.close()
+                    self?.showPets()
+                }
+            )
+        )
+        registrationWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    private func makeAutosizingWindow(title: String, rootView: some View) -> NSWindow {
+        let controller = NSHostingController(rootView: rootView)
+        controller.sizingOptions = .preferredContentSize
+        let window = NSWindow(contentViewController: controller)
+        window.title = title
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        return window
     }
 
     private func showSettings() {
@@ -191,16 +227,9 @@ extension AppDelegate: NSPopoverDelegate {
 
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
-    @ObservedObject var preferences: PetPreferences
     @ObservedObject var apps: AgentApps
+    let openPets: () -> Void
     let openSettings: () -> Void
-    let setPetVisible: (Bool) -> Void
-    let addPet: () -> Void
-    let choosePet: (UUID) -> Void
-
-    private var activePetIsVisible: Bool {
-        preferences.activePet?.isVisible ?? false
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -220,24 +249,7 @@ private struct ActivityMenu: View {
                 AgentAppRow(apps: apps, listing: listing)
             }
             Divider()
-            Button(activePetIsVisible ? "Hide pet" : "Show pet") {
-                setPetVisible(!activePetIsVisible)
-            }
-            Button("Add pet", action: addPet)
-                .disabled(!preferences.canAddPet)
-            Menu("Choose pet") {
-                ForEach(Array(preferences.pets.enumerated()), id: \.element.id) { index, pet in
-                    Button {
-                        choosePet(pet.id)
-                    } label: {
-                        if pet.id == preferences.activePetID {
-                            Label("Pet \(index + 1)", systemImage: "checkmark")
-                        } else {
-                            Text("Pet \(index + 1)")
-                        }
-                    }
-                }
-            }
+            Button("Pets…", action: openPets)
             Button("Settings…", action: openSettings)
             Divider()
             Button("Quit Amora") { NSApplication.shared.terminate(nil) }
