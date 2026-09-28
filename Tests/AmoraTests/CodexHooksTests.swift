@@ -77,7 +77,9 @@ import Testing
         let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
         let command = try #require(handler["command"] as? String)
         #expect(handler["async"] as? Bool == true)
+        let before = received.count
         let output = try await runHook(command, home: home, payload: cwdProjectPayload)
+        await waitUntil { received.count > before }
         #expect(output == (event == "Stop" ? "{}\n" : ""))
         #expect(!output.contains("private"))
         #expect(!output.contains("secret"))

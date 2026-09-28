@@ -111,7 +111,9 @@ import Testing
         #expect(handler["type"] as? String == "command")
         #expect(handler["failClosed"] as? Bool == false)
         #expect(handler["timeout"] as? Int == 2)
+        let before = received.count
         let output = try await runHook(command, home: home, payload: cursorProjectPayload)
+        await waitUntil { received.count > before }
         #expect(output == (event == "stop" ? "{}\n" : ""))
         #expect(!output.contains("private"))
         #expect(!output.contains("secret"))
