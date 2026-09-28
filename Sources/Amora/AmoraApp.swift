@@ -22,8 +22,10 @@ final class ActivityState: ObservableObject {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = ActivityState()
+    private let settings = SettingsModel()
     private var receiver: ActivityReceiver?
     private var statusItem: NSStatusItem?
+    private var settingsWindow: NSWindow?
     private let popover = NSPopover()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,7 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.action = #selector(toggleMenu)
         statusItem = item
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ActivityMenu(state: state))
+        popover.contentViewController = NSHostingController(
+            rootView: ActivityMenu(state: state, openSettings: { [weak self] in self?.showSettings() })
+        )
+        settings.applyStoredLaunchAtLogin()
         let receiver = ActivityReceiver { [weak self] event in
             self?.state.event = event
             self?.statusItem?.button?.toolTip = event.activity.rawValue.capitalized
@@ -58,23 +63,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
+
+    private func showSettings() {
+        popover.performClose(nil)
+        settings.refresh()
+        let window = settingsWindow ?? makeSettingsWindow()
+        settingsWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    private func makeSettingsWindow() -> NSWindow {
+        let controller = NSHostingController(rootView: SettingsView(model: settings))
+        let window = NSWindow(contentViewController: controller)
+        window.title = "Settings"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        controller.view.frame = NSRect(x: 0, y: 0, width: 420, height: 1)
+        controller.view.layoutSubtreeIfNeeded()
+        var size = controller.view.fittingSize
+        size.width = 420
+        if size.height < 300 || size.height > 640 { size.height = 420 }
+        window.setContentSize(size)
+        window.center()
+        return window
+    }
 }
 
 private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
-    @State private var hookMessage: String?
-    private let codexHooks = CodexHooks()
-    private let cursorHooks = CursorHooks()
-    private let claudeHooks = ClaudeHooks()
-
-    private func updateHooks(_ success: String, _ action: () throws -> Void) {
-        do {
-            try action()
-            hookMessage = success
-        } catch {
-            hookMessage = error.localizedDescription
-        }
-    }
+    let openSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -89,39 +107,7 @@ private struct ActivityMenu: View {
                 Text("Waiting for activity").foregroundStyle(.secondary)
             }
             Divider()
-            Button("Install Codex Hooks") {
-                updateHooks("Installed. Review and trust Amora's hooks in Codex Hooks settings or /hooks in the CLI.") {
-                    try codexHooks.install()
-                }
-            }
-            Button("Remove Codex Hooks") {
-                updateHooks("Amora's Codex hooks were removed.") {
-                    try codexHooks.remove()
-                }
-            }
-            Button("Install Cursor Hooks") {
-                updateHooks("Installed. Review and trust Amora's hooks in Cursor Hooks settings.") {
-                    try cursorHooks.install()
-                }
-            }
-            Button("Remove Cursor Hooks") {
-                updateHooks("Amora's Cursor hooks were removed.") {
-                    try cursorHooks.remove()
-                }
-            }
-            Button("Install Claude Code Hooks") {
-                updateHooks("Installed. Review and trust Amora's hooks in Claude Code settings.") {
-                    try claudeHooks.install()
-                }
-            }
-            Button("Remove Claude Code Hooks") {
-                updateHooks("Amora's Claude Code hooks were removed.") {
-                    try claudeHooks.remove()
-                }
-            }
-            if let hookMessage {
-                Text(hookMessage).font(.caption).foregroundStyle(.secondary)
-            }
+            Button("Settings…", action: openSettings)
             Divider()
             Button("Quit Amora") { NSApplication.shared.terminate(nil) }
         }

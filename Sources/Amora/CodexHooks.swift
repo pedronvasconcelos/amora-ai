@@ -29,6 +29,10 @@ struct CodexHooks {
         scriptURL = home.appending(path: "Library/Application Support/Amora/hooks/codex-hook.sh")
     }
 
+    func isInstalled() throws -> Bool {
+        try containsOwnedHooks()
+    }
+
     func install() throws {
         var document = try readConfiguration()
         var hooks = try removingOwnedHooks(from: document)
@@ -63,6 +67,38 @@ struct CodexHooks {
     private func command(for event: String) -> String {
         let quotedPath = "'" + scriptURL.path.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
         return "/bin/sh \(quotedPath) \(event)"
+    }
+
+    private func containsOwnedHooks() throws -> Bool {
+        guard FileManager.default.fileExists(atPath: configurationURL.path) else { return false }
+        let document = try readConfiguration()
+        guard let hooksValue = document["hooks"] else { return false }
+        guard let hooks = hooksValue as? [String: Any] else {
+            throw ConfigurationError.invalidConfiguration
+        }
+        var installed = true
+        for event in events {
+            guard let value = hooks[event] else {
+                installed = false
+                continue
+            }
+            guard let groups = value as? [[String: Any]] else {
+                throw ConfigurationError.invalidConfiguration
+            }
+            var found = false
+            for group in groups {
+                guard let handlers = group["hooks"] as? [[String: Any]] else {
+                    throw ConfigurationError.invalidConfiguration
+                }
+                if handlers.contains(where: {
+                    $0["type"] as? String == "command" && $0["command"] as? String == command(for: event)
+                }) {
+                    found = true
+                }
+            }
+            if !found { installed = false }
+        }
+        return installed
     }
 
     private func readConfiguration() throws -> [String: Any] {

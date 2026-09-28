@@ -24,6 +24,10 @@ struct CursorHooks {
         scriptURL = home.appending(path: "Library/Application Support/Amora/hooks/cursor-hook.sh")
     }
 
+    func isInstalled() throws -> Bool {
+        try containsOwnedHooks()
+    }
+
     func install() throws {
         var document = try readConfiguration()
         try requireSupportedVersion(document)
@@ -63,6 +67,30 @@ struct CursorHooks {
     private func command(for event: String) -> String {
         let quotedPath = "'" + scriptURL.path.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
         return "/bin/sh \(quotedPath) \(event)"
+    }
+
+    private func containsOwnedHooks() throws -> Bool {
+        guard FileManager.default.fileExists(atPath: configurationURL.path) else { return false }
+        let document = try readConfiguration()
+        try requireSupportedVersion(document)
+        guard let hooksValue = document["hooks"] else { return false }
+        guard let hooks = hooksValue as? [String: Any] else {
+            throw ConfigurationError.invalidConfiguration
+        }
+        var installed = true
+        for event in events {
+            guard let value = hooks[event] else {
+                installed = false
+                continue
+            }
+            guard let handlers = value as? [[String: Any]] else {
+                throw ConfigurationError.invalidConfiguration
+            }
+            if !handlers.contains(where: { $0["command"] as? String == command(for: event) }) {
+                installed = false
+            }
+        }
+        return installed
     }
 
     private func readConfiguration() throws -> [String: Any] {
