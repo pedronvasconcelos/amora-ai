@@ -64,6 +64,17 @@ private struct ActivityMenu: View {
     @ObservedObject var state: ActivityState
     @State private var hookMessage: String?
     private let codexHooks = CodexHooks()
+    private let cursorHooks = CursorHooks()
+    private let claudeHooks = ClaudeHooks()
+
+    private func updateHooks(_ success: String, _ action: () throws -> Void) {
+        do {
+            try action()
+            hookMessage = success
+        } catch {
+            hookMessage = error.localizedDescription
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -79,19 +90,33 @@ private struct ActivityMenu: View {
             }
             Divider()
             Button("Install Codex Hooks") {
-                do {
+                updateHooks("Installed. Review and trust Amora's hooks in Codex Hooks settings or /hooks in the CLI.") {
                     try codexHooks.install()
-                    hookMessage = "Installed. Review and trust Amora's hooks in Codex Hooks settings or /hooks in the CLI."
-                } catch {
-                    hookMessage = error.localizedDescription
                 }
             }
             Button("Remove Codex Hooks") {
-                do {
+                updateHooks("Amora's Codex hooks were removed.") {
                     try codexHooks.remove()
-                    hookMessage = "Amora's Codex hooks were removed."
-                } catch {
-                    hookMessage = error.localizedDescription
+                }
+            }
+            Button("Install Cursor Hooks") {
+                updateHooks("Installed. Review and trust Amora's hooks in Cursor Hooks settings.") {
+                    try cursorHooks.install()
+                }
+            }
+            Button("Remove Cursor Hooks") {
+                updateHooks("Amora's Cursor hooks were removed.") {
+                    try cursorHooks.remove()
+                }
+            }
+            Button("Install Claude Code Hooks") {
+                updateHooks("Installed. Review and trust Amora's hooks in Claude Code settings.") {
+                    try claudeHooks.install()
+                }
+            }
+            Button("Remove Claude Code Hooks") {
+                updateHooks("Amora's Claude Code hooks were removed.") {
+                    try claudeHooks.remove()
                 }
             }
             if let hookMessage {
