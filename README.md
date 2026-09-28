@@ -33,6 +33,12 @@ Pets already installed for Codex in `~/.codex/pets` (or `$CODEX_HOME/pets`) also
 
 The spritesheet has 8 columns of 192×208 cells: 1536×1872 with 9 rows for version 1, or 1536×2288 with 11 rows when `pet.json` declares `"spriteVersionNumber": 2`. Rows follow the Codex order: `idle`, `running-right`, `running-left`, `waving`, `jumping`, `failed`, `waiting`, `running`, `review`. Each row plays its consecutive non-empty frames from the first column. Amora shows `idle` while resting, `review` while thinking, `running` while working, `waiting` while waiting, and `jumping` when finished.
 
+### Calendars
+
+Amora reads your calendars through the macOS Calendar database, so it sees every Google account you add in **System Settings › Internet Accounts** (plus iCloud, Exchange, and other calendar accounts). Choose **Connect Calendars…** in the menu or in Settings and allow access when macOS asks. The menu's **Agenda** section lists the next events for today and tomorrow, with the account and calendar for each one. Starting 10 minutes before a timed event, and until 5 minutes after it starts, your pets wave and show a countdown. If an agent is waiting for you, the pet shows that instead. Settings groups calendars by account; turn off any calendar to hide its events. **Add Google Account…** opens Internet Accounts. Canceled events and events you declined are hidden. Amora only reads events on this Mac and never changes them.
+
+When you run from source, macOS asks for calendar access on behalf of the app you launched `swift run` from, such as Terminal.
+
 Settings lists Codex, Cursor, and Claude Code. Each row shows **Installed** or **Not installed**, with **Install** or **Remove**. **Launch at login** is under General. The choice is saved on this Mac. macOS opens Amora at login when Amora is in Applications; `swift run` only stores the preference.
 
 Installing hooks keeps your existing settings and any hooks you or another tool already configured. Each hook sends the activity and the project folder name. It does not send the prompt, files, or tool results. If Amora is not running, the hook exits without interrupting the agent. Choose **Install** again to update hook scripts from an earlier version; other hooks stay in place.

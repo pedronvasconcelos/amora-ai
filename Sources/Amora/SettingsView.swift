@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject var agenda: CalendarAgenda
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -27,6 +28,12 @@ struct SettingsView: View {
                 }
                 .padding(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox {
+                CalendarSettingsSection(agenda: agenda)
+                    .padding(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             GroupBox {

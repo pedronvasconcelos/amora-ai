@@ -6,6 +6,7 @@ enum PetPose: Equatable {
     case working
     case waiting
     case finished
+    case reminding
 }
 
 func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
@@ -18,15 +19,26 @@ func petPose(for activity: ActivityEvent.Activity?) -> PetPose {
     }
 }
 
+/// An agent waiting on the user still wins; otherwise an imminent calendar event takes over the pose.
+func petPose(for activity: ActivityEvent.Activity?, hasImminentEvent: Bool) -> PetPose {
+    guard hasImminentEvent, activity != .waiting else { return petPose(for: activity) }
+    return .reminding
+}
+
 func petContentScale(in size: CGSize, fallback: CGFloat) -> CGFloat {
     guard size.width > 1, size.height > 1 else { return fallback }
     return min(size.width / PetMetrics.size.width, size.height / PetMetrics.size.height)
 }
 
-func petAccessibilityLabel(for agents: [AgentActivity], isActive: Bool = false, name: String = "Amora") -> String {
-    let base: String
+func petAccessibilityLabel(
+    for agents: [AgentActivity],
+    isActive: Bool = false,
+    name: String = "Amora",
+    reminder: String? = nil
+) -> String {
+    var base: String
     if agents.isEmpty {
-        base = "\(name), resting"
+        base = reminder == nil ? "\(name), resting" : name
     } else {
         base = agents.map { agent in
             if let project = agent.project {
@@ -35,6 +47,9 @@ func petAccessibilityLabel(for agents: [AgentActivity], isActive: Bool = false, 
             return "\(agent.source.displayName), \(agent.activity.rawValue)"
         }.joined(separator: "; ")
     }
+    if let reminder {
+        base += "; \(reminder)"
+    }
     return isActive ? "\(base), active" : base
 }
 
@@ -42,6 +57,7 @@ struct PetView: View {
     @ObservedObject var state: ActivityState
     @ObservedObject var preferences: PetPreferences
     @ObservedObject var library: PetModelLibrary
+    @ObservedObject var agenda: CalendarAgenda
     let petID: UUID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -51,7 +67,8 @@ struct PetView: View {
 
     var body: some View {
         let agents = agentsForPet(scope: scope, agents: state.agents)
-        let pose = petPose(for: leadingActivity(agents)?.activity)
+        let imminent = agenda.imminent
+        let pose = petPose(for: leadingActivity(agents)?.activity, hasImminentEvent: imminent != nil)
         let coat = coatDefinition(builtinPet(for: scope).coat)
         GeometryReader { proxy in
             let scale = petContentScale(in: proxy.size, fallback: preferences.scale(for: petID))
@@ -79,6 +96,12 @@ struct PetView: View {
                     .padding(.bottom, 4)
                 }
             }
+            .overlay(alignment: .top) {
+                if let imminent {
+                    AgendaReminderBadge(countdown: agendaCountdown(imminent, now: agenda.now))
+                        .padding(.top, 4)
+                }
+            }
             .scaleEffect(scale)
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -86,8 +109,25 @@ struct PetView: View {
         .accessibilityLabel(petAccessibilityLabel(
             for: agents,
             isActive: isActive,
-            name: petDisplayName(scope: scope, modelName: model?.manifest.displayName)
+            name: petDisplayName(scope: scope, modelName: model?.manifest.displayName),
+            reminder: imminent.map { agendaReminderDescription($0, now: agenda.now) }
         ))
+    }
+}
+
+private struct AgendaReminderBadge: View {
+    let countdown: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "calendar")
+            Text(countdown)
+        }
+        .font(.system(size: 8, weight: .bold, design: .rounded))
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(PetPalette.copper))
     }
 }
 
@@ -204,6 +244,8 @@ private struct PetFigure: View {
             return sin(clock * 2.2) * 1.5
         case .finished:
             return 0
+        case .reminding:
+            return sin(clock * 4) * 2
         }
     }
 
@@ -282,6 +324,11 @@ private struct AmoraDrawing: View {
                 paw
                     .frame(width: 14, height: 14)
                     .offset(x: 28, y: -8)
+            }
+            if pose == .reminding {
+                paw
+                    .frame(width: 14, height: 14)
+                    .offset(x: 30, y: reduceMotion ? -14 : -14 + sin(clock * 10) * 4)
             }
             if pose == .working {
                 HStack(spacing: 20) {
@@ -369,7 +416,7 @@ private struct AmoraDrawing: View {
                     .stroke(PetPalette.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .frame(width: 9, height: 4)
                     .rotationEffect(.degrees(180))
-            case .waiting:
+            case .waiting, .reminding:
                 openEye(iris: iris, size: 9)
             case .thinking, .working, nil:
                 openEye(iris: iris, size: 8)

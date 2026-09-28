@@ -98,6 +98,10 @@ cat > "$app/Contents/Info.plist" <<EOF
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Amora shows your upcoming events from Google and other calendars in the menu and has your pets wave before a meeting starts.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Amora shows your upcoming events from Google and other calendars in the menu and has your pets wave before a meeting starts.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>
@@ -126,6 +130,7 @@ plutil -lint "$app/Contents/Info.plist" >/dev/null || fail "Info.plist is invali
 [ "$(plutil -extract CFBundleIdentifier raw "$app/Contents/Info.plist")" = ai.amora.app ] || fail "bundle identifier is wrong"
 [ "$(plutil -extract CFBundleIconFile raw "$app/Contents/Info.plist")" = AppIcon ] || fail "app icon is not configured"
 [ "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" = true ] || fail "LSUIElement must be true"
+plutil -extract NSCalendarsFullAccessUsageDescription raw "$app/Contents/Info.plist" >/dev/null || fail "calendar usage description is missing"
 [ -f "$app/Contents/Resources/AppIcon.icns" ] || fail "AppIcon.icns is missing"
 [ -x "$app/Contents/Resources/codex-hook.sh" ] || fail "codex hook is missing"
 [ -x "$app/Contents/Resources/cursor-hook.sh" ] || fail "cursor hook is missing"
