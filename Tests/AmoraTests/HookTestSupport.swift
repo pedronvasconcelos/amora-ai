@@ -22,9 +22,10 @@ func readDocument(_ url: URL) throws -> [String: Any] {
 }
 
 /// The activity socket is drained on a timer. Yield until that timer has delivered the event.
+/// The limit is generous because a loaded CI runner can starve the main actor; it only runs out when a test fails.
 @MainActor
-func waitUntil(_ condition: () -> Bool) async {
-    let deadline = Date().addingTimeInterval(1)
+func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async {
+    let deadline = Date().addingTimeInterval(timeout)
     while !condition(), Date() < deadline {
         try? await Task.sleep(for: .milliseconds(20))
     }
@@ -92,7 +93,7 @@ func captureHookLine(home: URL, _ send: () async throws -> Void) async throws ->
     guard bound == 0, listen(listener, 1) == 0 else { throw POSIXError(.EIO) }
     guard fcntl(listener, F_SETFL, O_NONBLOCK) != -1 else { throw POSIXError(.EIO) }
     try await send()
-    let deadline = Date().addingTimeInterval(2)
+    let deadline = Date().addingTimeInterval(5)
     var client: Int32 = -1
     while client < 0, Date() < deadline {
         client = accept(listener, nil, nil)
@@ -145,9 +146,16 @@ let cursorSessionPayload = """
 {"conversation_id":"conv-1","generation_id":"gen-9","model":"auto","model_params":{"session_id":"decoy"},"hook_event_name":"preToolUse","cursor_version":"2.1","workspace_roots":["/tmp/secret/amora-ai"],"tool_input":{"content":"private contents"}}
 """
 
+struct HookRun {
+    let command: String
+    let payload: String
+    /// False for a run that must send nothing. It is not waited on; the next run's event shows nothing came first.
+    var delivers = true
+}
+
 /// Runs each hook command with its payload against a live receiver and returns what arrived.
 @MainActor
-func deliveredEvents(home: URL, _ runs: [(command: String, payload: String)]) async throws -> [ActivityEvent] {
+func deliveredEvents(home: URL, _ runs: [HookRun]) async throws -> [ActivityEvent] {
     var received: [ActivityEvent] = []
     let receiver = ActivityReceiver(directory: home.appending(path: "Library/Application Support/Pet")) {
         received.append($0)
@@ -159,7 +167,9 @@ func deliveredEvents(home: URL, _ runs: [(command: String, payload: String)]) as
         let output = try await runHook(run.command, home: home, payload: run.payload)
         #expect(!output.contains("private"))
         #expect(!output.contains("secret"))
-        await waitUntil { received.count > before }
+        if run.delivers {
+            await waitUntil { received.count > before }
+        }
     }
     return received
 }

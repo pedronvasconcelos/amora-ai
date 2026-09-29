@@ -124,12 +124,13 @@ import Testing
 
     let subagentStop = #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","agent_id":"a-7","agent_type":"Explore","stop_hook_active":false}"#
     let received = try await deliveredEvents(home: home, [
-        (try command("PreToolUse"), claudeSessionPayload),
-        (try command("SubagentStart"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","agent_id":"a-7","agent_type":"Explore"}"#),
-        (try command("PermissionRequest"), claudeSubagentPayload),
-        (try command("SubagentStop"), subagentStop),
-        (try command("SubagentStop"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai"}"#),
-        (try command("SessionEnd"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","reason":"prompt_input_exit"}"#)
+        HookRun(command: try command("PreToolUse"), payload: claudeSessionPayload),
+        HookRun(command: try command("SubagentStart"), payload: #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","agent_id":"a-7","agent_type":"Explore"}"#),
+        HookRun(command: try command("PermissionRequest"), payload: claudeSubagentPayload),
+        HookRun(command: try command("SubagentStop"), payload: subagentStop),
+        // Without a subagent id, a SubagentStop would read as the whole session ending, so it sends nothing.
+        HookRun(command: try command("SubagentStop"), payload: #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai"}"#, delivers: false),
+        HookRun(command: try command("SessionEnd"), payload: #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","reason":"prompt_input_exit"}"#)
     ])
     #expect(received.map(\.activity) == [.working, .working, .waiting, .finished, .finished])
     #expect(received.allSatisfy { $0.source == .claude && $0.session == "5c2d-11" && $0.project == "amora-ai" })
