@@ -39,15 +39,17 @@ func runHook(
     process.executableURL = URL(fileURLWithPath: "/bin/sh")
     process.arguments = ["-c", command]
     process.environment = ["HOME": home.path, "PATH": "/usr/bin:/bin"]
-    let input = Pipe()
+    let inputURL = home.appending(path: "hook-input-\(UUID().uuidString)")
+    try Data(payload.utf8).write(to: inputURL)
+    defer { try? FileManager.default.removeItem(at: inputURL) }
+    let input = try FileHandle(forReadingFrom: inputURL)
+    defer { try? input.close() }
     let output = Pipe()
     let errors = Pipe()
     process.standardInput = input
     process.standardOutput = output
     process.standardError = errors
     try process.run()
-    input.fileHandleForWriting.write(Data(payload.utf8))
-    try input.fileHandleForWriting.close()
     let deadline = Date().addingTimeInterval(4)
     while process.isRunning && Date() < deadline {
         try await Task.sleep(for: .milliseconds(20))
@@ -114,4 +116,12 @@ func captureHookLine(home: URL, _ send: () async throws -> Void) async throws ->
         }
     }
     return String(decoding: data, as: UTF8.self)
+}
+
+@MainActor
+@Test func hookRunnerHandlesAnEarlyExitingChild() async throws {
+    let home = try temporaryHome()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let output = try await runHook("exit 0", home: home, payload: String(repeating: "x", count: 100_000))
+    #expect(output.isEmpty)
 }

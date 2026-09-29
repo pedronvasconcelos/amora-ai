@@ -303,6 +303,7 @@ import Testing
             preferences: preferences,
             library: PetModelLibrary(
                 directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                bundledDirectory: nil,
                 codexDirectory: nil
             ),
             agenda: emptyAgenda(),
@@ -478,6 +479,7 @@ import Testing
             preferences: preferences,
             library: PetModelLibrary(
                 directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                bundledDirectory: nil,
                 codexDirectory: nil
             ),
             agenda: emptyAgenda(),
@@ -535,6 +537,7 @@ import Testing
         preferences: preferences,
         library: PetModelLibrary(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+            bundledDirectory: nil,
             codexDirectory: nil
         ),
         agenda: emptyAgenda(),

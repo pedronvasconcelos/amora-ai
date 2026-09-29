@@ -9,7 +9,8 @@ let package = Package(
         .executableTarget(name: "Amora", resources: [
             .copy("Resources/claude-hook.sh"),
             .copy("Resources/codex-hook.sh"),
-            .copy("Resources/cursor-hook.sh")
+            .copy("Resources/cursor-hook.sh"),
+            .copy("Resources/Pets")
         ]),
         .testTarget(name: "AmoraTests", dependencies: ["Amora"])
     ]
