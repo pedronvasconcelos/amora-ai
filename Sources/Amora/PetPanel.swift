@@ -9,6 +9,10 @@ enum PetMetrics {
     static let defaultScale: CGFloat = 1
     /// Share of the shorter side that grabs a resize. A fixed pixel edge is easy to miss on a borderless pet.
     static let resizeMarginFraction: CGFloat = 0.3
+    /// Session companions beside one pet. Further sessions still appear in the menu.
+    static let maximumCompanions = 8
+    /// A subagent's pet is a pup: this share of its pet's size.
+    static let subagentScale: CGFloat = 0.75
 
     static func size(for scale: CGFloat) -> CGSize {
         let resolved = clampedPetScale(scale)
@@ -177,10 +181,74 @@ func clampedPetOrigin(_ origin: CGPoint, windowSize: CGSize, screenFrame: CGRect
     )
 }
 
+/// Where a pet's session companions sit: a row beside the pet on the side with more room, bottoms level
+/// with the pet, wrapping to further rows above (or below, near the top of the screen) when the row runs out.
+func companionFrames(petFrame: CGRect, sizes: [CGSize], screenFrame: CGRect) -> [CGRect] {
+    let leftward = petFrame.midX - screenFrame.minX >= screenFrame.maxX - petFrame.midX
+    let upward = screenFrame.maxY - petFrame.maxY >= petFrame.minY - screenFrame.minY
+    var frames: [CGRect] = []
+    var edge = leftward ? petFrame.minX : petFrame.maxX
+    var baseline = petFrame.minY
+    var placedInRow = 0
+    for size in sizes {
+        var x = leftward ? edge - size.width : edge
+        let overflows = leftward ? x < screenFrame.minX : x + size.width > screenFrame.maxX
+        if overflows, placedInRow > 0 {
+            baseline += upward ? petFrame.height : -petFrame.height
+            edge = leftward ? petFrame.maxX : petFrame.minX
+            x = leftward ? edge - size.width : edge
+            placedInRow = 0
+        }
+        let origin = clampedPetOrigin(CGPoint(x: x, y: baseline), windowSize: size, screenFrame: screenFrame)
+        frames.append(CGRect(origin: origin, size: size))
+        edge = leftward ? x : x + size.width
+        placedInRow += 1
+    }
+    return frames
+}
+
 final class PetPanelWindow: NSPanel {
     var hostsMenu = false
     override var canBecomeKey: Bool { hostsMenu }
     override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+private func makePetPanel(size: CGSize, content: some View) -> (PetPanelWindow, PetDragView) {
+    let window = PetPanelWindow(
+        contentRect: NSRect(origin: .zero, size: size),
+        styleMask: PetPanelPolicy.styleMask,
+        backing: .buffered,
+        defer: false
+    )
+    window.level = PetPanelPolicy.level
+    window.collectionBehavior = PetPanelPolicy.collectionBehavior
+    window.hidesOnDeactivate = false
+    window.isOpaque = false
+    window.backgroundColor = .clear
+    window.hasShadow = false
+    window.isMovableByWindowBackground = true
+    window.isReleasedWhenClosed = false
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
+    window.becomesKeyOnlyIfNeeded = true
+    window.acceptsMouseMovedEvents = true
+    let host = NSHostingView(rootView: content)
+    host.sizingOptions = []
+    host.frame = NSRect(origin: .zero, size: size)
+    host.autoresizingMask = [.width, .height]
+    host.wantsLayer = true
+    host.layer?.backgroundColor = NSColor.clear.cgColor
+    let drag = PetDragView(frame: host.frame)
+    drag.autoresizingMask = [.width, .height]
+    let container = NSView(frame: host.frame)
+    container.wantsLayer = true
+    container.layer?.backgroundColor = NSColor.clear.cgColor
+    container.addSubview(host)
+    container.addSubview(drag)
+    window.contentView = container
+    window.setContentSize(size)
+    return (window, drag)
 }
 
 @MainActor
@@ -195,40 +263,7 @@ final class PetPanelController: NSObject, NSWindowDelegate {
         self.petID = petID
         self.preferences = preferences
         self.onSelect = onSelect
-        let size = PetMetrics.size(for: preferences.scale(for: petID))
-        let window = PetPanelWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: PetPanelPolicy.styleMask,
-            backing: .buffered,
-            defer: false
-        )
-        window.level = PetPanelPolicy.level
-        window.collectionBehavior = PetPanelPolicy.collectionBehavior
-        window.hidesOnDeactivate = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.isMovableByWindowBackground = true
-        window.isReleasedWhenClosed = false
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.becomesKeyOnlyIfNeeded = true
-        window.acceptsMouseMovedEvents = true
-        let host = NSHostingView(rootView: content)
-        host.sizingOptions = []
-        host.frame = NSRect(origin: .zero, size: size)
-        host.autoresizingMask = [.width, .height]
-        host.wantsLayer = true
-        host.layer?.backgroundColor = NSColor.clear.cgColor
-        let drag = PetDragView(frame: host.frame)
-        drag.autoresizingMask = [.width, .height]
-        let container = NSView(frame: host.frame)
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.clear.cgColor
-        container.addSubview(host)
-        container.addSubview(drag)
-        window.contentView = container
-        window.setContentSize(size)
+        let (window, drag) = makePetPanel(size: PetMetrics.size(for: preferences.scale(for: petID)), content: content)
         self.window = window
         super.init()
         window.delegate = self
@@ -282,10 +317,54 @@ final class PetPanelController: NSObject, NSWindowDelegate {
     }
 }
 
+/// A session companion's window. It sits beside its pet and cannot be resized;
+/// dragging it moves the pet, and the whole pack follows.
+@MainActor
+final class CompanionPanelController {
+    let window: PetPanelWindow
+
+    init(size: CGSize, pet: NSWindow, content: some View, onSelect: @escaping () -> Void = {}) {
+        let (window, drag) = makePetPanel(size: size, content: content)
+        drag.allowsResize = false
+        drag.movingWindow = pet
+        drag.onSelect = onSelect
+        self.window = window
+    }
+
+    func setFrame(_ frame: CGRect) {
+        guard window.frame != frame else { return }
+        window.setFrame(frame, display: window.isVisible)
+    }
+
+    func show() {
+        window.orderFrontRegardless()
+    }
+
+    func hide() {
+        window.orderOut(nil)
+    }
+
+    var menuAnchorView: NSView {
+        window.contentView!
+    }
+
+    func setHostsMenu(_ hosts: Bool) {
+        window.hostsMenu = hosts
+        if hosts {
+            window.makeKeyAndOrderFront(nil)
+        } else if window.isKeyWindow {
+            window.resignKey()
+        }
+    }
+}
+
 private final class PetDragView: NSView {
     var onMove: ((CGPoint) -> Void)?
     var onResize: ((CGFloat, CGPoint) -> Void)?
     var onSelect: (() -> Void)?
+    var allowsResize = true
+    /// The window a drag moves, when it is not this view's own.
+    weak var movingWindow: NSWindow?
 
     private enum Gesture {
         case move(origin: NSPoint, mouse: NSPoint)
@@ -342,6 +421,10 @@ private final class PetDragView: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        guard allowsResize else {
+            addCursorRect(bounds, cursor: .openHand)
+            return
+        }
         for (rect, edge) in petResizeRegions(in: bounds.size) {
             addCursorRect(rect, cursor: petResizeCursor(for: edge))
         }
@@ -369,11 +452,11 @@ private final class PetDragView: NSView {
         borderLayer.isHidden = false
         let mouse = NSEvent.mouseLocation
         let point = convert(event.locationInWindow, from: nil)
-        if let edge = petResizeEdge(at: point, in: bounds.size) {
+        if allowsResize, let edge = petResizeEdge(at: point, in: bounds.size) {
             gesture = .resize(frame: window.frame, mouse: mouse, edge: edge)
             push(petResizeCursor(for: edge))
         } else {
-            gesture = .move(origin: window.frame.origin, mouse: mouse)
+            gesture = .move(origin: (movingWindow ?? window).frame.origin, mouse: mouse)
             push(.closedHand)
         }
     }
@@ -387,7 +470,7 @@ private final class PetDragView: NSView {
                 moved = true
             }
             let next = NSPoint(x: origin.x + (mouse.x - start.x), y: origin.y + (mouse.y - start.y))
-            window.setFrameOrigin(next)
+            (movingWindow ?? window).setFrameOrigin(next)
             onMove?(next)
         case .resize(let frame, let start, let edge):
             if hypot(mouse.x - start.x, mouse.y - start.y) > 2 {

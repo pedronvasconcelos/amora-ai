@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+@testable import Amora
 
 let cursorProjectPayload = """
 {"workspace_roots":["/tmp/secret/amora-ai"],"cwd":"/tmp/secret/nested","prompt":"private prompt","tool_input":{"file_path":"/tmp/secret/notes.txt","content":"private contents"},"tool_output":"private result"}
@@ -124,4 +125,41 @@ func captureHookLine(home: URL, _ send: () async throws -> Void) async throws ->
     defer { try? FileManager.default.removeItem(at: home) }
     let output = try await runHook("exit 0", home: home, payload: String(repeating: "x", count: 100_000))
     #expect(output.isEmpty)
+}
+
+/// Claude Code and Codex send the session, and inside a subagent the subagent, ahead of tool input.
+/// The decoys in tool input must never be read as ids.
+let claudeSessionPayload = """
+{"session_id":"5c2d-11","transcript_path":"/tmp/secret/t.jsonl","cwd":"/tmp/secret/amora-ai","permission_mode":"default","hook_event_name":"PreToolUse","tool_name":"mcp__notes__read","tool_input":{"session_id":"decoy","agent_id":"decoy","agent_type":"decoy","prompt":"private prompt"}}
+"""
+
+let claudeSubagentPayload = """
+{"session_id":"5c2d-11","transcript_path":"/tmp/secret/t.jsonl","cwd":"/tmp/secret/amora-ai","permission_mode":"default","agent_id":"a-7","agent_type":"Explore","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/tmp/secret/notes.txt","session_id":"decoy"}}
+"""
+
+let codexSubagentPayload = """
+{"session_id":"019a-77","turn_id":"t-3","agent_id":"019b-01","agent_type":"worker","transcript_path":null,"cwd":"/tmp/secret/amora-ai","hook_event_name":"PreToolUse","model":"gpt","permission_mode":"default","tool_name":"shell","tool_input":{"command":"private command","agent_id":"decoy"}}
+"""
+
+let cursorSessionPayload = """
+{"conversation_id":"conv-1","generation_id":"gen-9","model":"auto","model_params":{"session_id":"decoy"},"hook_event_name":"preToolUse","cursor_version":"2.1","workspace_roots":["/tmp/secret/amora-ai"],"tool_input":{"content":"private contents"}}
+"""
+
+/// Runs each hook command with its payload against a live receiver and returns what arrived.
+@MainActor
+func deliveredEvents(home: URL, _ runs: [(command: String, payload: String)]) async throws -> [ActivityEvent] {
+    var received: [ActivityEvent] = []
+    let receiver = ActivityReceiver(directory: home.appending(path: "Library/Application Support/Pet")) {
+        received.append($0)
+    }
+    try receiver.start()
+    defer { receiver.stop() }
+    for run in runs {
+        let before = received.count
+        let output = try await runHook(run.command, home: home, payload: run.payload)
+        #expect(!output.contains("private"))
+        #expect(!output.contains("secret"))
+        await waitUntil { received.count > before }
+    }
+    return received
 }

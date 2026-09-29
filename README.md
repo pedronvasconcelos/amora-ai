@@ -14,7 +14,11 @@ Amora is unsigned. The first time you open it, Control-click Amora in Applicatio
 
 The packaged app needs macOS 14 or later on Apple Silicon. It does not need Swift or Xcode.
 
-Click the paw icon to see the latest activity. Each agent that has reported shows what it is doing and the folder name of the project it is working in. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six). A pet can follow all agents or only Cursor, Codex, or Claude Code. The built-in collies are Amora (blue merle, all agents), Luna (black and white, Cursor), Storm (slate merle, Codex), and Duna (brown and white, Claude Code). You can still pick a registered model for any of them. Show or hide a pet, make it active, or remove it. Each pet keeps its own model, size, and position on this Mac. Drag a pet to move it, or drag its edges and corners to resize it. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+Click the paw icon to see the latest activity. Each open session shows what it is doing and the folder name of the project it is working in, with its subagents listed under it. An agent with no open session shows what it last reported. Choose **Pets…** to open the Pets window, where you add pets to the desktop (up to six). A pet can follow all agents or only Cursor, Codex, or Claude Code. The built-in collies are Amora (blue merle, all agents), Luna (black and white, Cursor), Storm (slate merle, Codex), and Duna (brown and white, Claude Code). You can still pick a registered model for any of them. Show or hide a pet, make it active, or remove it. Each pet keeps its own model, size, and position on this Mac. Drag a pet to move it, or drag its edges and corners to resize it. Choose **Settings…** to open the Settings window. Quit Amora from that menu.
+
+### One pet per session
+
+When you have more than one session open, such as two Claude Code sessions, Codex next to Cursor, or a session running subagents, each one gets its own pet. A pet shows the first open session it follows, and its badge names the project. Each other session it follows gets a companion beside it with the same look. Each subagent gets a smaller pup labeled with its type, such as Explore. Claude Code and Codex report subagents; Cursor reports each conversation. Companions leave when their session or subagent ends. A session that stops reporting is dropped after 30 minutes, or after 2 hours while it is waiting for you. Click a companion to open the menu, or drag it to move the whole group. Each pet has room for eight companions; further sessions still appear in the menu. To go back to one pet per agent, turn off **One pet per session** in the Pets window.
 
 ### Pet models
 
@@ -41,7 +45,7 @@ When you run from source, macOS asks for calendar access on behalf of the app yo
 
 Settings lists Codex, Cursor, and Claude Code. Each row shows **Installed** or **Not installed**, with **Install** or **Remove**. **Launch at login** is under General. The choice is saved on this Mac. macOS opens Amora at login when Amora is in Applications; `swift run` only stores the preference.
 
-Installing hooks keeps your existing settings and any hooks you or another tool already configured. Each hook sends the activity and the project folder name. It does not send the prompt, files, or tool results. If Amora is not running, the hook exits without interrupting the agent. Choose **Install** again to update hook scripts from an earlier version; other hooks stay in place.
+Installing hooks keeps your existing settings and any hooks you or another tool already configured. Each hook sends the activity, the project folder name, and the agent's session id, plus the subagent's id and type when a subagent reports. It does not send the prompt, files, or tool results. If Amora is not running, the hook exits without interrupting the agent. Choose **Install** again to update hook scripts from an earlier version; other hooks stay in place. Hooks from before sessions were tracked show **Not installed** until you do, and all of that agent's sessions share one pet until then.
 
 To enable Codex activity, choose **Install** next to Codex, then review and trust Amora's hooks in Codex settings or with `/hooks` in the Codex CLI.
 

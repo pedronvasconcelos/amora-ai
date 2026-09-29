@@ -172,6 +172,8 @@ final class AgentApps: NSObject, ObservableObject {
 enum MenuAnchor: Equatable {
     case statusItem
     case pet(UUID)
+    /// A session companion beside a pet, named by the pet and the session it mirrors.
+    case companion(UUID, String)
 }
 
 enum MenuToggle: Equatable {

@@ -17,7 +17,10 @@ struct CodexHooks {
 
     private let configurationURL: URL
     private let scriptURL: URL
-    private let events = ["UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop"]
+    private let events = [
+        "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop",
+        "SubagentStart", "SubagentStop", "SessionEnd"
+    ]
 
     init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
@@ -45,12 +48,16 @@ struct CodexHooks {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
         for event in events {
             var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append(["hooks": [[
+            var handler: [String: Any] = [
                 "type": "command",
                 "command": command(for: event),
-                "async": true,
                 "timeout": 2
-            ]]])
+            ]
+            // The agent may exit right after SessionEnd, so that hook runs before it does. It takes well under a second.
+            if event != "SessionEnd" {
+                handler["async"] = true
+            }
+            groups.append(["hooks": [handler]])
             hooks[event] = groups
         }
         document["hooks"] = hooks

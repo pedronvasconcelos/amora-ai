@@ -133,3 +133,26 @@ import Testing
     }
     #expect(line == "{\"v\":1,\"source\":\"cursor\",\"activity\":\"finished\",\"project\":\"amora-ai\"}\n")
 }
+
+@MainActor
+@Test func cursorHooksReportEachConversation() async throws {
+    let root = try temporaryHome()
+    let home = root.appending(path: "a'b")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try CursorHooks(home: home).install()
+    let hooks = try #require(readDocument(home.appending(path: ".cursor/hooks.json"))["hooks"] as? [String: [[String: Any]]])
+    func command(_ event: String) throws -> String {
+        try #require(hooks[event]?.first?["command"] as? String)
+    }
+    let end = #"{"session_id":"conv-1","conversation_id":"conv-1","hook_event_name":"sessionEnd","workspace_roots":["/tmp/secret/amora-ai"],"reason":"user_close","duration_ms":1200}"#
+    let received = try await deliveredEvents(home: home, [
+        (try command("preToolUse"), cursorSessionPayload),
+        (try command("sessionEnd"), end)
+    ])
+    #expect(received.map(\.activity) == [.working, .finished])
+    #expect(received.allSatisfy { $0.source == .cursor && $0.session == "conv-1" && $0.project == "amora-ai" })
+    #expect(received.allSatisfy { $0.subagent == nil })
+    #expect(received.map(\.ended) == [false, true])
+    let output = try await runHook(try command("sessionEnd"), home: home, payload: end)
+    #expect(output.isEmpty)
+}
