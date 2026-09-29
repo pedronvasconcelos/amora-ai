@@ -5,7 +5,7 @@ import Foundation
 final class ActivityReceiver {
     private struct Client {
         var buffer = Data()
-        let deadline = Date().addingTimeInterval(1)
+        let deadline: Date
     }
 
     private var listener: Int32 = -1
@@ -14,14 +14,18 @@ final class ActivityReceiver {
     private var timer: Timer?
     private var socketPath: String?
     private let directory: URL
+    /// How long one hook connection may stay open. A hook sends its single line at once.
+    private let clientTimeout: TimeInterval
     private let receive: (ActivityEvent) -> Void
 
     init(
         directory: URL = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Application Support/Pet", directoryHint: .isDirectory),
+        clientTimeout: TimeInterval = 1,
         receive: @escaping (ActivityEvent) -> Void
     ) {
         self.directory = directory
+        self.clientTimeout = clientTimeout
         self.receive = receive
     }
 
@@ -104,7 +108,7 @@ final class ActivityReceiver {
                 close(descriptor)
                 continue
             }
-            clients[descriptor] = Client()
+            clients[descriptor] = Client(deadline: Date().addingTimeInterval(clientTimeout))
         }
         for descriptor in clients.keys.sorted() {
             guard var client = clients[descriptor] else { continue }

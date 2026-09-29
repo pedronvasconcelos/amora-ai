@@ -92,7 +92,8 @@ import Testing
 @Test func receivesFramedEventsAndPreservesActiveSocket() async throws {
     let directory = URL(fileURLWithPath: "/tmp/amora-\(UUID().uuidString)")
     var events: [ActivityEvent] = []
-    let receiver = ActivityReceiver(directory: directory) { events.append($0) }
+    // A loaded CI runner can resume this test well after a second, so the connection must outlive the pause.
+    let receiver = ActivityReceiver(directory: directory, clientTimeout: 60) { events.append($0) }
     try receiver.start()
     defer {
         receiver.stop()
@@ -127,7 +128,7 @@ import Testing
     #expect(events.isEmpty)
     let rest = Data(("\ninvalid\n" + #"{"v":1,"source":"claude","activity":"finished"}"# + "\n").utf8)
     #expect(rest.withUnsafeBytes { write(descriptor, $0.baseAddress, $0.count) } == rest.count)
-    try await Task.sleep(for: .milliseconds(200))
+    await waitUntil { events.count >= 2 }
     #expect(events.map(\.activity) == [.thinking, .finished])
     #expect(events.last?.source == .claude)
     receiver.stop()

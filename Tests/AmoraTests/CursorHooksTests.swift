@@ -146,8 +146,8 @@ import Testing
     }
     let end = #"{"session_id":"conv-1","conversation_id":"conv-1","hook_event_name":"sessionEnd","workspace_roots":["/tmp/secret/amora-ai"],"reason":"user_close","duration_ms":1200}"#
     let received = try await deliveredEvents(home: home, [
-        (try command("preToolUse"), cursorSessionPayload),
-        (try command("sessionEnd"), end)
+        HookRun(command: try command("preToolUse"), payload: cursorSessionPayload),
+        HookRun(command: try command("sessionEnd"), payload: end)
     ])
     #expect(received.map(\.activity) == [.working, .finished])
     #expect(received.allSatisfy { $0.source == .cursor && $0.session == "conv-1" && $0.project == "amora-ai" })
