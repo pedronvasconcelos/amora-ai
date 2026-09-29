@@ -41,10 +41,15 @@ func petAccessibilityLabel(
         base = reminder == nil ? "\(name), resting" : name
     } else {
         base = agents.map { agent in
-            if let project = agent.project {
-                return "\(agent.source.displayName), \(agent.activity.rawValue), \(project)"
+            var parts = [agent.source.displayName]
+            if agent.isSubagent {
+                parts.append(agent.subagentType.map { "\($0) subagent" } ?? "subagent")
             }
-            return "\(agent.source.displayName), \(agent.activity.rawValue)"
+            parts.append(agent.activity.rawValue)
+            if let project = agent.project {
+                parts.append(project)
+            }
+            return parts.joined(separator: ", ")
         }.joined(separator: "; ")
     }
     if let reminder {
@@ -59,15 +64,31 @@ struct PetView: View {
     @ObservedObject var library: PetModelLibrary
     @ObservedObject var agenda: CalendarAgenda
     let petID: UUID
+    /// Set on a session companion: the session or subagent it mirrors. It keeps its pet's look.
+    var session: String? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var isActive: Bool { preferences.activePetID == petID }
+    private var isActive: Bool { session == nil && preferences.activePetID == petID }
     private var scope: PetScope { preferences.pet(petID)?.scope ?? .everyone }
     private var model: PetModel? { library.model(id: preferences.pet(petID)?.modelID) }
 
+    private var agents: [AgentActivity] {
+        if let session {
+            return state.sessions.filter { $0.id == session }
+        }
+        return agentsForPet(
+            scope: scope,
+            perSession: preferences.petPerSession,
+            sessions: state.sessions,
+            agents: state.agents
+        )
+    }
+
     var body: some View {
-        let agents = agentsForPet(scope: scope, agents: state.agents)
-        let imminent = agenda.imminent
+        let agents = self.agents
+        let showsTag = (session != nil || preferences.petPerSession) && agents.count == 1
+        // Only the pet itself reminds you of an event, so a pack of companions does not all wave at once.
+        let imminent = session == nil ? agenda.imminent : nil
         let pose = petPose(for: leadingActivity(agents)?.activity, hasImminentEvent: imminent != nil)
         let coat = coatDefinition(builtinPet(for: scope).coat)
         GeometryReader { proxy in
@@ -91,8 +112,9 @@ struct PetView: View {
             .overlay(alignment: .bottom) {
                 if !agents.isEmpty {
                     HStack(spacing: 3) {
-                        ForEach(agents) { AgentActivityBadge(agent: $0) }
+                        ForEach(agents) { AgentActivityBadge(agent: $0, showsTag: showsTag) }
                     }
+                    .padding(.horizontal, 8)
                     .padding(.bottom, 4)
                 }
             }
@@ -133,11 +155,17 @@ private struct AgendaReminderBadge: View {
 
 private struct AgentActivityBadge: View {
     let agent: AgentActivity
+    var showsTag = false
 
     var body: some View {
         HStack(spacing: 2) {
             Text(agent.source.monogram)
             Image(systemName: agent.activity.symbolName)
+            if showsTag, let tag = agent.tag {
+                Text(tag)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .font(.system(size: 8, weight: .bold, design: .rounded))
         .foregroundStyle(agent.activity == .waiting ? Color.white : PetPalette.ink)

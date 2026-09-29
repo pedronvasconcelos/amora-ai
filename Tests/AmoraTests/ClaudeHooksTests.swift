@@ -102,3 +102,44 @@ import Testing
     }
     #expect(line == "{\"v\":1,\"source\":\"claude\",\"activity\":\"finished\",\"project\":\"amora-ai\"}\n")
 }
+
+@MainActor
+@Test func claudeHooksReportEachSessionAndSubagent() async throws {
+    let root = try temporaryHome()
+    let home = root.appending(path: "a'b")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try ClaudeHooks(home: home, environment: [:]).install()
+    let hooks = try #require(readDocument(home.appending(path: ".claude/settings.json"))["hooks"] as? [String: [[String: Any]]])
+    func handler(_ event: String) throws -> [String: Any] {
+        let group = try #require(hooks[event]?.first)
+        return try #require((group["hooks"] as? [[String: Any]])?.first)
+    }
+    func command(_ event: String) throws -> String {
+        try #require(handler(event)["command"] as? String)
+    }
+    #expect(try handler("SubagentStart")["async"] as? Bool == true)
+    #expect(try handler("SubagentStop")["async"] as? Bool == true)
+    #expect(try handler("SessionEnd")["async"] == nil)
+    #expect(try handler("SessionEnd")["timeout"] as? Int == 2)
+
+    let subagentStop = #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","agent_id":"a-7","agent_type":"Explore","stop_hook_active":false}"#
+    let received = try await deliveredEvents(home: home, [
+        (try command("PreToolUse"), claudeSessionPayload),
+        (try command("SubagentStart"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","agent_id":"a-7","agent_type":"Explore"}"#),
+        (try command("PermissionRequest"), claudeSubagentPayload),
+        (try command("SubagentStop"), subagentStop),
+        (try command("SubagentStop"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai"}"#),
+        (try command("SessionEnd"), #"{"session_id":"5c2d-11","cwd":"/tmp/secret/amora-ai","reason":"prompt_input_exit"}"#)
+    ])
+    #expect(received.map(\.activity) == [.working, .working, .waiting, .finished, .finished])
+    #expect(received.allSatisfy { $0.source == .claude && $0.session == "5c2d-11" && $0.project == "amora-ai" })
+    #expect(received.map(\.subagent) == [nil, "a-7", "a-7", "a-7", nil])
+    #expect(received.map(\.subagentType) == [nil, "Explore", "Explore", "Explore", nil])
+    #expect(received.map(\.ended) == [false, false, false, true, true])
+    let output = try await runHook(try command("SubagentStop"), home: home, payload: subagentStop)
+    #expect(output == "{}\n")
+    let line = try await captureHookLine(home: home) {
+        _ = try await runHook(try command("PreToolUse"), home: home, payload: claudeSubagentPayload)
+    }
+    #expect(line == #"{"v":1,"source":"claude","activity":"working","project":"amora-ai","session":"5c2d-11","subagent":"a-7","subagentType":"Explore"}"# + "\n")
+}

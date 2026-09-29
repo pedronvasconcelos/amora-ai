@@ -38,6 +38,15 @@ struct PetManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    Toggle("One pet per session", isOn: Binding(
+                        get: { preferences.petPerSession },
+                        set: { preferences.setPetPerSession($0) }
+                    ))
+                    Text("When you have several sessions open, a pet shows the first one it follows and a companion appears beside it for each of the others, labeled with its project. Each subagent gets a smaller pup. Companions leave when their session or subagent ends. Drag any of them to move the group.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(4)
                 .frame(maxWidth: .infinity, alignment: .leading)

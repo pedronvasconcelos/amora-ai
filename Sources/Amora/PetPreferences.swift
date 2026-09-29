@@ -75,10 +75,13 @@ final class PetPreferences: ObservableObject {
     static let visibleKey = "petVisible"
     static let originXKey = "petOriginX"
     static let originYKey = "petOriginY"
+    static let petPerSessionKey = "petPerSession"
     static let maximumPets = 6
 
     @Published private(set) var pets: [DesktopPet]
     @Published private(set) var activePetID: UUID
+    /// Each open session and subagent gets its own pet beside the pet that follows its agent.
+    @Published private(set) var petPerSession: Bool
     var onPetsChanged: (@MainActor () -> Void)?
     private let defaults: UserDefaults
 
@@ -87,6 +90,7 @@ final class PetPreferences: ObservableObject {
         let stored = Self.load(from: defaults)
         pets = stored.pets
         activePetID = stored.activePetID
+        petPerSession = defaults.object(forKey: Self.petPerSessionKey) as? Bool ?? true
         if stored.shouldPersist {
             persist()
         }
@@ -145,6 +149,12 @@ final class PetPreferences: ObservableObject {
             pets[index].modelID = nil
         }
         persist()
+    }
+
+    func setPetPerSession(_ enabled: Bool) {
+        guard petPerSession != enabled else { return }
+        petPerSession = enabled
+        defaults.set(enabled, forKey: Self.petPerSessionKey)
     }
 
     func setActive(_ id: UUID) {

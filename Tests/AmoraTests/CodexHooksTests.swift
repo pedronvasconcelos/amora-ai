@@ -101,3 +101,34 @@ import Testing
     #expect(line == "{\"v\":1,\"source\":\"codex\",\"activity\":\"finished\",\"project\":\"amora-ai\"}\n")
 }
 
+
+@MainActor
+@Test func codexHooksReportEachSessionAndSubagent() async throws {
+    let root = try temporaryHome()
+    let home = root.appending(path: "a'b")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try CodexHooks(home: home, environment: [:]).install()
+    let hooks = try #require(readDocument(home.appending(path: ".codex/hooks.json"))["hooks"] as? [String: [[String: Any]]])
+    func handler(_ event: String) throws -> [String: Any] {
+        let group = try #require(hooks[event]?.first)
+        return try #require((group["hooks"] as? [[String: Any]])?.first)
+    }
+    func command(_ event: String) throws -> String {
+        try #require(handler(event)["command"] as? String)
+    }
+    #expect(try handler("SessionEnd")["async"] == nil)
+
+    let start = #"{"session_id":"019a-77","turn_id":"t-3","transcript_path":null,"cwd":"/tmp/secret/amora-ai","hook_event_name":"SubagentStart","model":"gpt","permission_mode":"default","agent_id":"019b-01","agent_type":"worker"}"#
+    let stop = #"{"session_id":"019a-77","turn_id":"t-3","transcript_path":null,"agent_transcript_path":null,"cwd":"/tmp/secret/amora-ai","hook_event_name":"SubagentStop","model":"gpt","permission_mode":"default","stop_hook_active":false,"agent_id":"019b-01","agent_type":"worker","last_assistant_message":"private result"}"#
+    let received = try await deliveredEvents(home: home, [
+        (try command("SubagentStart"), start),
+        (try command("PreToolUse"), codexSubagentPayload),
+        (try command("SubagentStop"), stop),
+        (try command("SessionEnd"), #"{"session_id":"019a-77","transcript_path":null,"cwd":"/tmp/secret/amora-ai","hook_event_name":"SessionEnd","reason":"other"}"#)
+    ])
+    #expect(received.map(\.activity) == [.working, .working, .finished, .finished])
+    #expect(received.allSatisfy { $0.source == .codex && $0.session == "019a-77" && $0.project == "amora-ai" })
+    #expect(received.map(\.subagent) == ["019b-01", "019b-01", "019b-01", nil])
+    #expect(received.map(\.subagentType) == ["worker", "worker", "worker", nil])
+    #expect(received.map(\.ended) == [false, false, true, true])
+}

@@ -17,7 +17,7 @@ struct CursorHooks {
 
     private let configurationURL: URL
     private let scriptURL: URL
-    private let events = ["beforeSubmitPrompt", "preToolUse", "afterFileEdit", "stop"]
+    private let events = ["beforeSubmitPrompt", "preToolUse", "afterFileEdit", "stop", "sessionEnd"]
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         configurationURL = home.appending(path: ".cursor/hooks.json")

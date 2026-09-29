@@ -568,6 +568,159 @@ import Testing
 }
 
 @MainActor
+@Test func onePetPerSessionIsOnUnlessTurnedOff() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let preferences = PetPreferences(defaults: suite.defaults)
+    #expect(preferences.petPerSession)
+    preferences.setPetPerSession(false)
+    #expect(PetPreferences(defaults: suite.defaults).petPerSession == false)
+    preferences.setPetPerSession(true)
+    #expect(PetPreferences(defaults: suite.defaults).petPerSession)
+}
+
+@Test func eachSessionGetsItsOwnPet() {
+    let sessions = [
+        AgentActivity(source: .claude, activity: .working, project: "amora-ai", session: "s1"),
+        AgentActivity(source: .claude, activity: .waiting, project: "amora-ai", session: "s1", subagent: "a1", subagentType: "Explore"),
+        AgentActivity(source: .cursor, activity: .thinking, project: "site", session: "c1"),
+        AgentActivity(source: .claude, activity: .finished, project: "api", session: "s2")
+    ]
+    let agents = agentActivities(sessions: sessions, activities: [:])
+    #expect(agents.map(\.id) == ["cursor|c1|", "claude|s1|a1"])
+
+    #expect(agentsForPet(scope: .claude, perSession: true, sessions: sessions, agents: agents) == [sessions[0]])
+    #expect(companionSessions(scope: .claude, sessions: sessions) == [sessions[1], sessions[3]])
+    #expect(agentsForPet(scope: .everyone, perSession: true, sessions: sessions, agents: agents) == [sessions[0]])
+    #expect(companionSessions(scope: .everyone, sessions: sessions) == Array(sessions.dropFirst()))
+    #expect(agentsForPet(scope: .cursor, perSession: true, sessions: sessions, agents: agents) == [sessions[2]])
+    #expect(companionSessions(scope: .cursor, sessions: sessions).isEmpty)
+    #expect(agentsForPet(scope: .codex, perSession: true, sessions: sessions, agents: agents).isEmpty)
+    // Turned off, a pet shows each agent's most urgent session, as before.
+    #expect(agentsForPet(scope: .claude, perSession: false, sessions: sessions, agents: agents) == [sessions[1]])
+
+    // With nothing open, the pet shows what its agent last reported.
+    let lastKnown = [AgentActivity(source: .codex, activity: .finished, project: "cli")]
+    #expect(agentsForPet(scope: .codex, perSession: true, sessions: [], agents: lastKnown) == lastKnown)
+
+    let many = (0..<12).map { AgentActivity(source: .codex, activity: .working, session: "s\($0)") }
+    let companions = companionSessions(scope: .codex, sessions: many)
+    #expect(companions.count == PetMetrics.maximumCompanions)
+    #expect(companions.first?.session == "s1")
+
+    #expect(sessions[1].tag == "Explore")
+    #expect(sessions[3].tag == "api")
+    #expect(petAccessibilityLabel(for: [sessions[1]], name: "Duna") == "Claude Code, Explore subagent, waiting, amora-ai")
+    #expect(petAccessibilityLabel(for: [
+        AgentActivity(source: .codex, activity: .working, session: "s1", subagent: "t1")
+    ]) == "Codex, subagent, working")
+}
+
+@Test func companionsLineUpBesideTheirPet() {
+    let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    let size = CGSize(width: 100, height: 120)
+    let pup = CGSize(width: 75, height: 90)
+
+    let bottomRight = CGRect(x: 872, y: 28, width: 100, height: 120)
+    #expect(companionFrames(petFrame: bottomRight, sizes: [size, pup, size], screenFrame: screen) == [
+        CGRect(x: 772, y: 28, width: 100, height: 120),
+        CGRect(x: 697, y: 28, width: 75, height: 90),
+        CGRect(x: 597, y: 28, width: 100, height: 120)
+    ])
+
+    let leftEdge = CGRect(x: 10, y: 28, width: 100, height: 120)
+    #expect(companionFrames(petFrame: leftEdge, sizes: [size, pup], screenFrame: screen) == [
+        CGRect(x: 110, y: 28, width: 100, height: 120),
+        CGRect(x: 210, y: 28, width: 75, height: 90)
+    ])
+
+    // A full row continues on a row above, starting over the pet.
+    let narrow = CGRect(x: 0, y: 0, width: 400, height: 800)
+    let corner = CGRect(x: 290, y: 28, width: 100, height: 120)
+    #expect(companionFrames(petFrame: corner, sizes: [size, size, size, size], screenFrame: narrow) == [
+        CGRect(x: 190, y: 28, width: 100, height: 120),
+        CGRect(x: 90, y: 28, width: 100, height: 120),
+        CGRect(x: 290, y: 148, width: 100, height: 120),
+        CGRect(x: 190, y: 148, width: 100, height: 120)
+    ])
+
+    // Near the top of the screen, further rows go below.
+    let top = CGRect(x: 290, y: 670, width: 100, height: 120)
+    #expect(companionFrames(petFrame: top, sizes: [size, size, size], screenFrame: narrow) == [
+        CGRect(x: 190, y: 670, width: 100, height: 120),
+        CGRect(x: 90, y: 670, width: 100, height: 120),
+        CGRect(x: 290, y: 550, width: 100, height: 120)
+    ])
+    #expect(companionFrames(petFrame: top, sizes: [], screenFrame: narrow).isEmpty)
+}
+
+@MainActor
+@Test func companionFloatsBesideItsPetAndDrawsItsSession() throws {
+    let suite = try temporaryDefaults()
+    defer { suite.close() }
+    let preferences = PetPreferences(defaults: suite.defaults)
+    let id = preferences.pets[0].id
+    let state = ActivityState()
+    let pup = try #require(ActivityEvent.decode(Data(
+        #"{"v":1,"source":"claude","activity":"working","project":"amora-ai","session":"s1","subagent":"a1","subagentType":"Explore"}"#.utf8
+    )))
+    state.record(pup)
+    let library = PetModelLibrary(
+        directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+        bundledDirectory: nil,
+        codexDirectory: nil
+    )
+    let pet = PetPanelController(
+        petID: id,
+        preferences: preferences,
+        content: PetView(state: state, preferences: preferences, library: library, agenda: emptyAgenda(), petID: id)
+    )
+    let size = PetMetrics.size(for: PetMetrics.subagentScale)
+    let view = PetView(
+        state: state,
+        preferences: preferences,
+        library: library,
+        agenda: emptyAgenda(),
+        petID: id,
+        session: "claude|s1|a1"
+    )
+    let companion = CompanionPanelController(size: size, pet: pet.window, content: view)
+    let window = companion.window
+    #expect(window.styleMask == PetPanelPolicy.styleMask)
+    #expect(window.level == PetPanelPolicy.level)
+    #expect(window.collectionBehavior == PetPanelPolicy.collectionBehavior)
+    #expect(window.canBecomeKey == false)
+    companion.setHostsMenu(true)
+    #expect(window.canBecomeKey == true)
+    companion.setHostsMenu(false)
+    #expect(window.canBecomeKey == false)
+    let frame = CGRect(x: 40, y: 50, width: size.width, height: size.height)
+    companion.setFrame(frame)
+    #expect(window.frame == frame)
+
+    let renderer = ImageRenderer(content: view.frame(width: size.width, height: size.height))
+    renderer.scale = 1
+    let image = try #require(renderer.nsImage)
+    guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else {
+        Issue.record("The companion has no bitmap")
+        return
+    }
+    var painted = 0
+    var y = 0
+    while y < rep.pixelsHigh {
+        var x = 0
+        while x < rep.pixelsWide {
+            if let color = rep.colorAt(x: x, y: y), color.alphaComponent > 0.3 {
+                painted += 1
+            }
+            x += 6
+        }
+        y += 6
+    }
+    #expect(painted > 20)
+}
+
+@MainActor
 private final class ChangeCounter {
     var count = 0
 }

@@ -54,9 +54,16 @@ struct ActivityEvent: Decodable {
     let source: Source
     let activity: Activity
     let project: String?
+    /// The agent's own id for the session, so two sessions of one agent stay apart.
+    let session: String?
+    /// Set when a subagent inside the session reported, rather than the session itself.
+    let subagent: String?
+    let subagentType: String?
+    /// The session, or the subagent, has closed.
+    let ended: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case v, source, activity, project
+        case v, source, activity, project, session, subagent, subagentType, ended
     }
 
     init(from decoder: Decoder) throws {
@@ -71,6 +78,12 @@ struct ActivityEvent: Decodable {
             decodedProject = nil
         }
         project = acceptedProjectName(decodedProject)
+        session = acceptedIdentifier(try? container.decodeIfPresent(String.self, forKey: .session))
+        subagent = acceptedIdentifier(try? container.decodeIfPresent(String.self, forKey: .subagent))
+        subagentType = subagent == nil
+            ? nil
+            : acceptedProjectName(try? container.decodeIfPresent(String.self, forKey: .subagentType))
+        ended = (try? container.decodeIfPresent(Bool.self, forKey: .ended)) ?? false
     }
 
     static func decode(_ data: Data) -> ActivityEvent? {
@@ -91,24 +104,67 @@ func acceptedProjectName(_ raw: String?) -> String? {
     return name
 }
 
+/// An opaque session or subagent id. Anything that could be more than an id is dropped.
+func acceptedIdentifier(_ raw: String?) -> String? {
+    guard let raw, (1...128).contains(raw.unicodeScalars.count) else { return nil }
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-")
+    guard raw.unicodeScalars.allSatisfy(allowed.contains) else { return nil }
+    return raw
+}
+
 struct AgentSnapshot: Equatable {
     var activity: ActivityEvent.Activity
     var project: String?
 }
 
+/// What one agent, one of its sessions, or one subagent in a session is doing.
 struct AgentActivity: Equatable, Identifiable {
     let source: ActivityEvent.Source
-    let activity: ActivityEvent.Activity
+    var activity: ActivityEvent.Activity
     var project: String? = nil
+    var session: String? = nil
+    var subagent: String? = nil
+    var subagentType: String? = nil
 
-    var id: ActivityEvent.Source { source }
+    var id: String { Self.id(source: source, session: session, subagent: subagent) }
+    var isSubagent: Bool { subagent != nil }
+
+    /// "Claude Code", or "Claude Code › Explore" for a subagent.
+    var title: String {
+        guard isSubagent else { return source.displayName }
+        return "\(source.displayName) › \(subagentType ?? "Subagent")"
+    }
+
+    /// The short name on a session's pet: the subagent's type, or the project.
+    var tag: String? {
+        isSubagent ? (subagentType ?? "Subagent") : project
+    }
+
+    static func id(source: ActivityEvent.Source, session: String?, subagent: String?) -> String {
+        [source.rawValue, session ?? "", subagent ?? ""].joined(separator: "|")
+    }
 }
 
-func agentActivities(_ activities: [ActivityEvent.Source: AgentSnapshot]) -> [AgentActivity] {
+/// One entry per agent: its session that most needs attention, or what it last reported when no session is open.
+func agentActivities(
+    sessions: [AgentActivity],
+    activities: [ActivityEvent.Source: AgentSnapshot]
+) -> [AgentActivity] {
     ActivityEvent.Source.allCases.compactMap { source in
-        activities[source].map {
-            AgentActivity(source: source, activity: $0.activity, project: $0.project)
-        }
+        leadingActivity(sessions.filter { $0.source == source })
+            ?? activities[source].map { AgentActivity(source: source, activity: $0.activity, project: $0.project) }
+    }
+}
+
+/// Every open session and subagent, grouped by agent. An agent with none open shows what it last reported.
+func activityRows(
+    sessions: [AgentActivity],
+    activities: [ActivityEvent.Source: AgentSnapshot]
+) -> [AgentActivity] {
+    ActivityEvent.Source.allCases.flatMap { source -> [AgentActivity] in
+        let open = sessions.filter { $0.source == source }
+        if !open.isEmpty { return open }
+        return activities[source].map { [AgentActivity(source: source, activity: $0.activity, project: $0.project)] } ?? []
     }
 }
 
@@ -126,8 +182,8 @@ func activitySummary(_ agents: [AgentActivity]) -> String? {
     guard !agents.isEmpty else { return nil }
     return agents.map { agent in
         if let project = agent.project {
-            return "\(agent.source.displayName): \(agent.activity.label) · \(project)"
+            return "\(agent.title): \(agent.activity.label) · \(project)"
         }
-        return "\(agent.source.displayName): \(agent.activity.label)"
+        return "\(agent.title): \(agent.activity.label)"
     }.joined(separator: "\n")
 }

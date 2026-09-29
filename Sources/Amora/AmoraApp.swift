@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -14,19 +15,6 @@ struct AmoraApp {
 }
 
 @MainActor
-final class ActivityState: ObservableObject {
-    @Published private(set) var activities: [ActivityEvent.Source: AgentSnapshot] = [:]
-    @Published var error: String?
-
-    var agents: [AgentActivity] { agentActivities(activities) }
-
-    func record(_ event: ActivityEvent) {
-        let project = event.project ?? activities[event.source]?.project
-        activities[event.source] = AgentSnapshot(activity: event.activity, project: project)
-    }
-}
-
-@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let state = ActivityState()
     private let settings = SettingsModel()
@@ -36,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let agenda = CalendarAgenda()
     private var receiver: ActivityReceiver?
     private var petPanels: [UUID: PetPanelController] = [:]
+    private var companionPanels: [CompanionKey: CompanionPanelController] = [:]
+    private var companionUpdates: AnyCancellable?
+    private var staleSessionTimer: Timer?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var petsWindow: NSWindow?
@@ -64,12 +55,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         petPreferences.onPetsChanged = { [weak self] in self?.syncPetPanels() }
         syncPetPanels()
+        // Both publish before they change; hop to the next turn of the main queue to read the new values.
+        companionUpdates = state.objectWillChange
+            .merge(with: petPreferences.objectWillChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.syncCompanionPanels() }
+        staleSessionTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.state.removeStaleSessions() }
+        }
         settings.applyStoredLaunchAtLogin()
         agenda.startMonitoring()
         let receiver = ActivityReceiver { [weak self] event in
             guard let self else { return }
             self.state.record(event)
-            self.statusItem?.button?.toolTip = activitySummary(self.state.agents)
+            self.statusItem?.button?.toolTip = activitySummary(self.state.rows)
         }
         self.receiver = receiver
         do {
@@ -80,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        staleSessionTimer?.invalidate()
         receiver?.stop()
         agenda.stopMonitoring()
     }
@@ -114,8 +114,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for panel in petPanels.values {
             panel.setHostsMenu(false)
         }
-        if case .pet(let id) = anchor, let panel = petPanels[id] {
-            panel.setHostsMenu(true)
+        for panel in companionPanels.values {
+            panel.setHostsMenu(false)
+        }
+        switch anchor {
+        case .pet(let id):
+            petPanels[id]?.setHostsMenu(true)
+        case .companion(let pet, let session):
+            companionPanels[CompanionKey(pet: pet, session: session)]?.setHostsMenu(true)
+        case .statusItem:
+            break
         }
     }
 
@@ -134,6 +142,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 panel.hide()
             }
         }
+    }
+
+    /// Gives each open session after a pet's own a companion beside that pet, and lines the pack up.
+    private func syncCompanionPanels() {
+        var wanted: Set<CompanionKey> = []
+        var packs: [(pet: UUID, window: NSWindow, sessions: [AgentActivity])] = []
+        if petPreferences.petPerSession {
+            for pet in petPreferences.pets where pet.isVisible {
+                guard let window = petPanels[pet.id]?.window, window.isVisible else { continue }
+                let sessions = companionSessions(scope: pet.scope, sessions: state.sessions)
+                guard !sessions.isEmpty else { continue }
+                packs.append((pet.id, window, sessions))
+                wanted.formUnion(sessions.map { CompanionKey(pet: pet.id, session: $0.id) })
+            }
+        }
+        for (key, panel) in companionPanels where !wanted.contains(key) {
+            if menuAnchor == .companion(key.pet, key.session) {
+                popover.performClose(nil)
+            }
+            panel.hide()
+            companionPanels[key] = nil
+        }
+        for pack in packs {
+            let scale = petPreferences.scale(for: pack.pet)
+            let sizes = pack.sessions.map { session in
+                PetMetrics.size(for: session.isSubagent ? scale * PetMetrics.subagentScale : scale)
+            }
+            let screen = pack.window.screen?.visibleFrame
+                ?? NSScreen.main?.visibleFrame
+                ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+            let frames = companionFrames(petFrame: pack.window.frame, sizes: sizes, screenFrame: screen)
+            for (session, frame) in zip(pack.sessions, frames) {
+                let key = CompanionKey(pet: pack.pet, session: session.id)
+                let panel = companionPanels[key] ?? makeCompanionPanel(key, size: frame.size, pet: pack.window)
+                companionPanels[key] = panel
+                panel.setFrame(frame)
+                if !panel.window.isVisible {
+                    panel.show()
+                }
+            }
+        }
+    }
+
+    private func makeCompanionPanel(_ key: CompanionKey, size: CGSize, pet: NSWindow) -> CompanionPanelController {
+        CompanionPanelController(
+            size: size,
+            pet: pet,
+            content: PetView(
+                state: state,
+                preferences: petPreferences,
+                library: petModels,
+                agenda: agenda,
+                petID: key.pet,
+                session: key.session
+            ),
+            onSelect: { [weak self] in
+                guard let self, let panel = self.companionPanels[key] else { return }
+                self.presentMenu(anchor: .companion(key.pet, key.session), view: panel.menuAnchorView, edge: .maxY)
+            }
+        )
     }
 
     private func makePanel(id: UUID) -> PetPanelController {
@@ -223,7 +291,15 @@ extension AppDelegate: NSPopoverDelegate {
         for panel in petPanels.values {
             panel.setHostsMenu(false)
         }
+        for panel in companionPanels.values {
+            panel.setHostsMenu(false)
+        }
     }
+}
+
+private struct CompanionKey: Hashable {
+    let pet: UUID
+    let session: String
 }
 
 private struct ActivityMenu: View {
@@ -238,19 +314,27 @@ private struct ActivityMenu: View {
             Text("Amora").font(.headline)
             if let error = state.error {
                 Text(error).foregroundStyle(.red)
-            } else if !state.agents.isEmpty {
-                ForEach(state.agents) { agent in
+            } else if !state.rows.isEmpty {
+                ForEach(state.rows) { agent in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(agent.source.displayName)
-                            if let project = agent.project {
-                                Text(project)
+                            if agent.isSubagent {
+                                Label(agent.subagentType ?? "Subagent", systemImage: "arrow.turn.down.right")
+                                Text("Subagent")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                            } else {
+                                Text(agent.source.displayName)
+                                if let project = agent.project {
+                                    Text(project)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                         }
+                        .padding(.leading, agent.isSubagent ? 12 : 0)
                         Spacer(minLength: 8)
                         Label(agent.activity.label, systemImage: agent.activity.symbolName)
                             .foregroundStyle(.secondary)

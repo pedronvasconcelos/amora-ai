@@ -58,6 +58,25 @@ func agentsForPet(scope: PetScope, agents: [AgentActivity]) -> [AgentActivity] {
     return agents.filter { $0.source == source }
 }
 
+/// What a pet mirrors. With a pet per session it takes the first open session it follows,
+/// and its companions take the rest; with none open it shows what its agents last reported.
+func agentsForPet(
+    scope: PetScope,
+    perSession: Bool,
+    sessions: [AgentActivity],
+    agents: [AgentActivity]
+) -> [AgentActivity] {
+    if perSession, let first = agentsForPet(scope: scope, agents: sessions).first {
+        return [first]
+    }
+    return agentsForPet(scope: scope, agents: agents)
+}
+
+/// The sessions that get a companion beside a pet: every one it follows after its own, up to the limit.
+func companionSessions(scope: PetScope, sessions: [AgentActivity]) -> [AgentActivity] {
+    Array(agentsForPet(scope: scope, agents: sessions).dropFirst().prefix(PetMetrics.maximumCompanions))
+}
+
 struct PetRGB: Equatable {
     var red: Double
     var green: Double

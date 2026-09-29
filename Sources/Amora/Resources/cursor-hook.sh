@@ -1,8 +1,11 @@
 #!/bin/sh
 
-# The case statement stays outside $(...) so macOS /bin/sh (Bash 3.2) can parse it.
-read_project() {
-    project_path=$(/usr/bin/awk '
+# The case statements stay outside $(...) so macOS /bin/sh (Bash 3.2) can parse them.
+# Prints four lines: the project path, the session id, the subagent id, and the subagent type.
+# Ids come only from the part of the payload before its first nested object, so text inside
+# tool input can never pass for one. Every agent sends them ahead of tool input.
+read_payload() {
+    /usr/bin/awk '
         function capture(rest,    i, c, out, esc) {
             out = ""
             esc = 0
@@ -22,6 +25,12 @@ read_project() {
             }
             return ""
         }
+        function field(text, key) {
+            if (match(text, "\"" key "\"[[:space:]]*:[[:space:]]*\"")) {
+                return capture(substr(text, RSTART + RLENGTH))
+            }
+            return ""
+        }
         { buf = buf $0 }
         END {
             path = ""
@@ -31,9 +40,18 @@ read_project() {
             if (path == "" && match(buf, /"cwd"[[:space:]]*:[[:space:]]*"/)) {
                 path = capture(substr(buf, RSTART + RLENGTH))
             }
-            printf "%s", path
+            head = substr(buf, index(buf, "{") + 1)
+            nested = index(head, "{")
+            if (nested > 0) head = substr(head, 1, nested - 1)
+            session = field(head, "conversation_id")
+            if (session == "") session = field(head, "session_id")
+            printf "%s\n%s\n%s\n%s\n", path, session, field(head, "agent_id"), field(head, "agent_type")
         }
-    ')
+    '
+}
+
+project_name() {
+    project_path=$1
     while :; do
         case "$project_path" in
             */) project_path=${project_path%/} ;;
@@ -54,24 +72,48 @@ read_project() {
     printf '%s' "$project"
 }
 
-project=$(read_project)
+# Session and subagent ids are opaque tokens; anything else is dropped.
+accepted_id() {
+    case "$1" in
+        ""|*[![:alnum:]._:-]*) return 0 ;;
+    esac
+    if [ "${#1}" -le "$2" ]; then
+        printf '%s' "$1"
+    fi
+}
+
+payload=$(read_payload)
+{
+    IFS= read -r project_path
+    IFS= read -r session
+    IFS= read -r subagent
+    IFS= read -r subagent_type
+} <<EOF
+$payload
+EOF
+project=$(project_name "$project_path")
+session=$(accepted_id "$session" 128)
+subagent=$(accepted_id "$subagent" 128)
+subagent_type=$(accepted_id "$subagent_type" 64)
+ended=""
 
 case "$1" in
     beforeSubmitPrompt) activity=thinking ;;
     preToolUse|afterFileEdit) activity=working ;;
     stop) activity=finished; printf '{}\n' ;;
+    sessionEnd) activity=finished; ended=1 ;;
     *) exit 0 ;;
 esac
 
 socket="$HOME/Library/Application Support/Pet/pet.sock"
 [ -S "$socket" ] || exit 0
 
-if [ -n "$project" ]; then
-    printf '{"v":1,"source":"cursor","activity":"%s","project":"%s"}\n' "$activity" "$project" |
-        /usr/bin/nc -U -w 1 "$socket" >/dev/null 2>&1
-else
-    printf '{"v":1,"source":"cursor","activity":"%s"}\n' "$activity" |
-        /usr/bin/nc -U -w 1 "$socket" >/dev/null 2>&1
-fi
+line='{"v":1,"source":"cursor","activity":"'"$activity"'"'
+[ -n "$project" ] && line="$line"',"project":"'"$project"'"'
+[ -n "$session" ] && line="$line"',"session":"'"$session"'"'
+[ -n "$subagent" ] && line="$line"',"subagent":"'"$subagent"'"'
+[ -n "$subagent" ] && [ -n "$subagent_type" ] && line="$line"',"subagentType":"'"$subagent_type"'"'
+[ -n "$ended" ] && line="$line"',"ended":true'
+printf '%s}\n' "$line" | /usr/bin/nc -U -w 1 "$socket" >/dev/null 2>&1
 
 exit 0
