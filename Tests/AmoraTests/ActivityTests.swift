@@ -106,6 +106,8 @@ import Testing
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
     #expect(descriptor >= 0)
     defer { close(descriptor) }
+    var noSignal: Int32 = 1
+    #expect(setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) == 0)
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
     address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
