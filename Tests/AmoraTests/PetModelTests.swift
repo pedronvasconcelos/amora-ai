@@ -98,7 +98,7 @@ private let standardFrames = [6, 8, 8, 4, 5, 8, 6, 6, 6]
         try? FileManager.default.removeItem(at: libraryDirectory)
     }
     try writePackage(in: source, manifest: manifest(), sheetName: "codie.png")
-    let library = PetModelLibrary(directory: libraryDirectory, codexDirectory: nil)
+    let library = PetModelLibrary(directory: libraryDirectory, bundledDirectory: nil, codexDirectory: nil)
     #expect(library.models.isEmpty)
 
     let draft = try PetModelImporter.inspect([
@@ -114,7 +114,7 @@ private let standardFrames = [6, 8, 8, 4, 5, 8, 6, 6, 6]
     #expect(stored.spritesheetPath == "spritesheet.png")
     #expect(stored.displayName == "Codie")
 
-    let reloaded = PetModelLibrary(directory: libraryDirectory, codexDirectory: nil)
+    let reloaded = PetModelLibrary(directory: libraryDirectory, bundledDirectory: nil, codexDirectory: nil)
     #expect(reloaded.models.map(\.id) == ["codie"])
     #expect(reloaded.model(id: "codie")?.source == .amora)
     #expect(reloaded.model(id: "codie")?.sprite.rows.map(\.count) == standardFrames)
@@ -127,7 +127,7 @@ private let standardFrames = [6, 8, 8, 4, 5, 8, 6, 6, 6]
     try library.remove(id: "codie")
     #expect(library.models.isEmpty)
     #expect(!FileManager.default.fileExists(atPath: installed.path))
-    #expect(PetModelLibrary(directory: libraryDirectory, codexDirectory: nil).models.isEmpty)
+    #expect(PetModelLibrary(directory: libraryDirectory, bundledDirectory: nil, codexDirectory: nil).models.isEmpty)
 }
 
 @MainActor
@@ -145,7 +145,7 @@ private let standardFrames = [6, 8, 8, 4, 5, 8, 6, 6, 6]
     try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
     try json(manifest()).write(to: broken.appending(path: "pet.json"))
 
-    let library = PetModelLibrary(directory: libraryDirectory, codexDirectory: codexDirectory)
+    let library = PetModelLibrary(directory: libraryDirectory, bundledDirectory: nil, codexDirectory: codexDirectory)
     #expect(library.models.map(\.id) == ["codie"])
     #expect(library.model(id: "codie")?.source == .codex)
     #expect(library.contains(id: "codie") == false)
@@ -165,6 +165,50 @@ private let standardFrames = [6, 8, 8, 4, 5, 8, 6, 6, 6]
     let home = URL(fileURLWithPath: "/Users/amora", isDirectory: true)
     #expect(PetModelLibrary.defaultCodexDirectory(home: home, environment: [:]).path == "/Users/amora/.codex/pets")
     #expect(PetModelLibrary.defaultCodexDirectory(home: home, environment: ["CODEX_HOME": "/tmp/codex"]).path == "/tmp/codex/pets")
+}
+
+@MainActor
+@Test func includedCodexPetsLoadWithoutAUserInstallation() throws {
+    let bundle = try #require(PetModelLibrary.defaultBundledDirectory())
+    let library = PetModelLibrary(
+        directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+        bundledDirectory: bundle,
+        codexDirectory: nil
+    )
+    #expect(Set(library.models.map(\.id)) == [
+        "black-white", "blue-merle", "brown-white", "brown-working-line", "slate-merle"
+    ])
+    #expect(library.models.allSatisfy { $0.source == .bundled })
+    #expect(library.models.allSatisfy { $0.sprite.rows.prefix(9).allSatisfy { !$0.isEmpty } })
+}
+
+@MainActor
+@Test func registeredPetsOverrideIncludedPetsWhichOverrideCodexPets() throws {
+    let registeredDirectory = try temporaryDirectory()
+    let bundledDirectory = try temporaryDirectory()
+    let codexDirectory = try temporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: registeredDirectory)
+        try? FileManager.default.removeItem(at: bundledDirectory)
+        try? FileManager.default.removeItem(at: codexDirectory)
+    }
+    for folder in [bundledDirectory, codexDirectory] {
+        let pet = folder.appending(path: "codie", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: pet, withIntermediateDirectories: true)
+        try writePackage(in: pet, manifest: manifest(spritesheetPath: "spritesheet.png"), sheetName: "spritesheet.png")
+    }
+    let library = PetModelLibrary(
+        directory: registeredDirectory,
+        bundledDirectory: bundledDirectory,
+        codexDirectory: codexDirectory
+    )
+    #expect(library.model(id: "codie")?.source == .bundled)
+
+    let draft = try PetModelImporter.inspect([bundledDirectory.appending(path: "codie")])
+    try library.register(draft)
+    #expect(library.model(id: "codie")?.source == .amora)
+    try library.remove(id: "codie")
+    #expect(library.model(id: "codie")?.source == .bundled)
 }
 
 @Test func mapsPetPosesToCodexAnimationRows() {

@@ -41,6 +41,7 @@ swift build -c release --arch arm64
 bin=$(swift build -c release --arch arm64 --show-bin-path)
 [ -x "$bin/Amora" ] || fail "release executable was not built"
 [ -f "$bin/Amora_Amora.bundle/codex-hook.sh" ] || fail "bundled hook scripts were not built"
+[ -d "$bin/Amora_Amora.bundle/Pets" ] || fail "bundled pets were not built"
 
 rm -rf "$root/dist"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -49,6 +50,7 @@ ditto "$bin/Amora" "$app/Contents/MacOS/Amora"
 ditto "$bin/Amora_Amora.bundle/claude-hook.sh" "$app/Contents/Resources/claude-hook.sh"
 ditto "$bin/Amora_Amora.bundle/codex-hook.sh" "$app/Contents/Resources/codex-hook.sh"
 ditto "$bin/Amora_Amora.bundle/cursor-hook.sh" "$app/Contents/Resources/cursor-hook.sh"
+ditto "$bin/Amora_Amora.bundle/Pets" "$app/Contents/Resources/Pets"
 chmod 755 "$app/Contents/MacOS/Amora" \
     "$app/Contents/Resources/claude-hook.sh" \
     "$app/Contents/Resources/codex-hook.sh" \
@@ -135,6 +137,10 @@ plutil -extract NSCalendarsFullAccessUsageDescription raw "$app/Contents/Info.pl
 [ -x "$app/Contents/Resources/codex-hook.sh" ] || fail "codex hook is missing"
 [ -x "$app/Contents/Resources/cursor-hook.sh" ] || fail "cursor hook is missing"
 [ -x "$app/Contents/Resources/claude-hook.sh" ] || fail "claude hook is missing"
+for pet in black-white blue-merle brown-white brown-working-line slate-merle; do
+    [ -f "$app/Contents/Resources/Pets/$pet/pet.json" ] || fail "$pet manifest is missing"
+    [ -f "$app/Contents/Resources/Pets/$pet/spritesheet.webp" ] || fail "$pet spritesheet is missing"
+done
 [ "$(lipo -archs "$executable")" = arm64 ] || fail "executable must be arm64 only"
 otool -L "$executable" | grep -E '/Applications/Xcode.app|/Library/Developer/CommandLineTools' >/dev/null && fail "executable links toolchain libraries"
 otool -l "$executable" | awk '/cmd LC_RPATH/{f=1} f && /path /{print $2; f=0}' | grep -E 'Xcode.app|CommandLineTools' >/dev/null && fail "executable still has a toolchain rpath"
@@ -148,6 +154,7 @@ hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg" >/dev/null
 [ -L "$mount/Applications" ] || fail "disk image is missing the Applications shortcut"
 [ -f "$mount/Amora.app/Contents/Resources/AppIcon.icns" ] || fail "disk image app is missing its icon"
 [ -x "$mount/Amora.app/Contents/Resources/codex-hook.sh" ] || fail "disk image app is missing hook resources"
+[ -f "$mount/Amora.app/Contents/Resources/Pets/brown-working-line/spritesheet.webp" ] || fail "disk image app is missing bundled pets"
 hdiutil detach "$mount" -quiet
 mount=""
 

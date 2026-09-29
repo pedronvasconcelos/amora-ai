@@ -71,7 +71,7 @@ struct PetManagerView: View {
                             remove(model)
                         }
                     }
-                    Text(codexNote)
+                    Text("The included models stay available without Codex. Models installed for Codex also appear here automatically; a registered model takes priority.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -88,11 +88,6 @@ struct PetManagerView: View {
         }
         .padding(20)
         .frame(width: 640)
-    }
-
-    private var codexNote: String {
-        let folder = library.codexDirectory.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "~/.codex/pets"
-        return "Pets installed for Codex in \(folder) appear here automatically. Register a model to keep a copy in Amora."
     }
 
     private func remove(_ model: PetModel) {
@@ -207,6 +202,10 @@ private struct ModelRow: View {
                 case .amora:
                     Button("Remove", action: onRemove)
                         .accessibilityLabel("Remove model \(model.manifest.displayName)")
+                case .bundled:
+                    Text("Included")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 case .codex:
                     Text("From Codex")
                         .font(.caption)

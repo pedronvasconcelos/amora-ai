@@ -20,7 +20,7 @@ Click the paw icon to see the latest activity. Each agent that has reported show
 
 Amora accepts pet models in the same format as Codex custom pets: a folder with a `pet.json` manifest and a transparent `spritesheet.webp` (or PNG). In the Pets window, choose **Register model…**, then drag `pet.json` and the spritesheet, or the folder that contains them, onto the drop zone. Amora validates the package, shows a preview of each animation, and copies it to `~/Library/Application Support/Amora/pets/<id>/`. Registering a model with an existing `id` replaces it.
 
-Pets already installed for Codex in `~/.codex/pets` (or `$CODEX_HOME/pets`) also appear in the Pets window automatically, labeled **From Codex**. Amora reads them in place and never changes that folder. If a registered model has the same `id`, Amora uses the registered copy.
+Amora includes five Codex pet models: Preto e Branco, Blue Merle, Marrom e Branco, Brown Working Line, and Slate Merle. They appear in the Pets window as **Included** and work without Codex installed. Pets installed for Codex in `~/.codex/pets` (or `$CODEX_HOME/pets`) also appear automatically as **From Codex**. Amora reads that folder without changing it. If models share an `id`, a registered model takes priority, followed by the included model, then the Codex model.
 
 ```json
 {

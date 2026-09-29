@@ -134,6 +134,7 @@ struct PetModelDraft {
 struct PetModel: Identifiable {
     enum Source: Equatable {
         case amora
+        case bundled
         case codex
     }
 
@@ -309,17 +310,21 @@ enum PetModelImporter {
 final class PetModelLibrary: ObservableObject {
     @Published private(set) var models: [PetModel] = []
     let directory: URL
+    let bundledDirectory: URL?
     let codexDirectory: URL?
     private let fileManager: FileManager
     private var registered: [PetModel] = []
+    private var bundled: [PetModel] = []
     private var codex: [PetModel] = []
 
     init(
         directory: URL = PetModelLibrary.defaultDirectory(),
+        bundledDirectory: URL? = PetModelLibrary.defaultBundledDirectory(),
         codexDirectory: URL? = PetModelLibrary.defaultCodexDirectory(),
         fileManager: FileManager = .default
     ) {
         self.directory = directory
+        self.bundledDirectory = bundledDirectory
         self.codexDirectory = codexDirectory
         self.fileManager = fileManager
         reload()
@@ -340,6 +345,11 @@ final class PetModelLibrary: ObservableObject {
         return codexHome.appending(path: "pets", directoryHint: .isDirectory)
     }
 
+    nonisolated static func defaultBundledDirectory() -> URL? {
+        Bundle.main.url(forResource: "Pets", withExtension: nil)
+            ?? Bundle.module.url(forResource: "Pets", withExtension: nil)
+    }
+
     func model(id: String?) -> PetModel? {
         guard let id else { return nil }
         return models.first { $0.id == id }
@@ -351,6 +361,7 @@ final class PetModelLibrary: ObservableObject {
 
     func reload() {
         registered = loadModels(in: directory, source: .amora)
+        bundled = bundledDirectory.map { loadModels(in: $0, source: .bundled) } ?? []
         codex = codexDirectory.map { loadModels(in: $0, source: .codex) } ?? []
         publish()
     }
@@ -408,8 +419,9 @@ final class PetModelLibrary: ObservableObject {
 
     private func publish() {
         var seen = Set(registered.map(\.id))
+        let fromBundle = bundled.filter { seen.insert($0.id).inserted }
         let fromCodex = codex.filter { seen.insert($0.id).inserted }
-        models = (registered + fromCodex).sorted {
+        models = (registered + fromBundle + fromCodex).sorted {
             $0.manifest.displayName.localizedStandardCompare($1.manifest.displayName) == .orderedAscending
         }
     }
